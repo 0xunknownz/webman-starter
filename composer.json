@@ -1,0 +1,33 @@
+{
+    "name": "z0x/webman-starter",
+    "description": "webman starter",
+    "type": "library",
+    "require": {
+        "tinywan/jwt": "^1.15",
+        "tinywan/validate": "^1.0",
+        "tinywan/storage": "^1.1",
+        "aliyuncs/oss-sdk-php": "^2.7",
+        "webman/captcha": "^1.0",
+        "webman/event": "^1.0",
+        "robmorgan/phinx": "^0.16.11",
+        "hhink/webman-sms": "^1.0",
+        "vlucas/phpdotenv": "^5.6",
+        "webman/log": "^2.1",
+        "ramsey/uuid": "^4.9"
+    },
+    "require-dev": {
+        "odan/phinx-migrations-generator": "^6.4"
+    },
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "Z0x\\WebmanStarter\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "z0x",
+            "email": "mr_zong@qq.com"
+        }
+    ]
+}
