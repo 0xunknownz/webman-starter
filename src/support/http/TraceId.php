@@ -10,9 +10,9 @@ final class TraceId
 {
     public const HEADER = 'X-Trace-Id';
 
-    public static function fromRequest(Request $request): string
+    public static function fromRequest(?Request $request): string
     {
-        $traceId = $request->header(self::HEADER);
+        $traceId = $request?->header(self::HEADER);
 
         if (is_string($traceId) && self::isValid($traceId)) {
             return $traceId;

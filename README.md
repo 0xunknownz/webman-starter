@@ -9,6 +9,7 @@ Webman starter support package for common API response conventions, trace IDs, e
 - Shared application error code constants.
 - Business exception helpers for common HTTP failure cases.
 - Webman exception handler that converts exceptions into API responses.
+- Request-free response creation for CLI tests and library-level checks.
 
 ## Requirements
 
@@ -78,6 +79,17 @@ throw BusinessException::validation([
 ]);
 ```
 
+Create custom business exceptions when the built-in helpers are not specific enough:
+
+```php
+throw BusinessException::make(
+    message: '订单状态不允许取消',
+    code: 300001,
+    status: 409,
+    data: ['order_id' => 123]
+);
+```
+
 ## Exception Handler
 
 Register the package exception handler in the host Webman project:
@@ -142,6 +154,8 @@ src/
     http/
       ApiResponse.php
       ErrorCode.php
+      Pagination.php
+      ResponseEnvelope.php
       TraceId.php
 docs/
   api-response.md

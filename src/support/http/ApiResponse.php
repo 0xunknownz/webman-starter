@@ -7,7 +7,6 @@ use Webman\Http\Request;
 use Webman\Http\Response;
 
 use function json;
-use function request;
 
 final class ApiResponse
 {
@@ -39,16 +38,11 @@ final class ApiResponse
         string $message = 'success',
         ?Request $request = null
     ): Response {
-        $safePerPage = max($perPage, 1);
+        $pagination = Pagination::fromTotal($page, $perPage, $total);
 
         return self::success([
             'items' => $items,
-            'pagination' => [
-                'page' => $page,
-                'per_page' => $perPage,
-                'total' => $total,
-                'total_pages' => (int) ceil($total / $safePerPage),
-            ],
+            'pagination' => $pagination->toArray(),
         ], $message, 200, $request);
     }
 
@@ -77,20 +71,10 @@ final class ApiResponse
         ?array $errors,
         ?Request $request
     ): Response {
-        $traceId = TraceId::fromRequest($request ?? request());
+        $traceId = TraceId::fromRequest($request);
+        $envelope = ResponseEnvelope::create($code, $message, $data, $traceId, $errors);
 
-        $body = [
-            'code' => $code,
-            'message' => $message,
-            'data' => $data,
-            'trace_id' => $traceId,
-        ];
-
-        if ($errors !== null) {
-            $body['errors'] = $errors;
-        }
-
-        return json($body)
+        return json($envelope->toArray())
             ->withStatus($status)
             ->header('Content-Type', self::CONTENT_TYPE)
             ->header(TraceId::HEADER, $traceId);

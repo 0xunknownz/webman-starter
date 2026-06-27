@@ -59,6 +59,12 @@ HTTP API responses use one JSON envelope at the controller boundary. Service and
 
 `total_pages` is calculated by `ApiResponse::paginated()`.
 
+`page`, `per_page`, and `total` are normalized to safe values before the response is built:
+
+- `page` is at least `1`.
+- `per_page` is at least `1`.
+- `total` is at least `0`.
+
 ## Trace ID
 
 Every response includes `trace_id` in the body and `X-Trace-Id` in the response header.
@@ -67,6 +73,8 @@ Resolution order:
 
 1. Use a valid request header `X-Trace-Id`.
 2. Otherwise generate a UUID v7 with `ramsey/uuid`.
+
+When no `Request` is provided, responses still receive a generated trace ID. This keeps controller tests and CLI-level contract checks independent from Webman's active request context.
 
 Accepted inbound trace IDs are 8-128 characters and may contain letters, numbers, `.`, `_`, `:`, and `-`.
 
@@ -126,6 +134,15 @@ return ApiResponse::paginated(
 throw BusinessException::validation([
     'phone' => ['手机号格式不正确'],
 ]);
+
+throw BusinessException::tokenExpired();
+
+throw BusinessException::make(
+    message: '订单状态不允许取消',
+    code: 300001,
+    status: 409,
+    data: ['order_id' => 123]
+);
 ```
 
 Register the exception handler in the host Webman project:
