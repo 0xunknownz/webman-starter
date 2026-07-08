@@ -50,7 +50,7 @@ final class ApiResponse
      * @param array<string, array<int, string>>|null $errors
      */
     public static function fail(
-        int $code,
+        string $code,
         string $message,
         int $status = 400,
         mixed $data = null,
@@ -64,7 +64,7 @@ final class ApiResponse
      * @param array<string, array<int, string>>|null $errors
      */
     private static function json(
-        int $code,
+        string $code,
         string $message,
         mixed $data,
         int $status,

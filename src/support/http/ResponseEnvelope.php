@@ -9,7 +9,7 @@ final class ResponseEnvelope
      * @param array<string, array<int, string>>|null $errors
      */
     private function __construct(
-        private readonly int $code,
+        private readonly string $code,
         private readonly string $message,
         private readonly mixed $data,
         private readonly string $traceId,
@@ -21,7 +21,7 @@ final class ResponseEnvelope
      * @param array<string, array<int, string>>|null $errors
      */
     public static function create(
-        int $code,
+        string $code,
         string $message,
         mixed $data,
         string $traceId,
@@ -31,7 +31,7 @@ final class ResponseEnvelope
     }
 
     /**
-     * @return array{code: int, message: string, data: mixed, trace_id: string, errors?: array<string, array<int, string>>}
+     * @return array{code: string, message: string, data: mixed, trace_id: string, errors?: array<string, array<int, string>>}
      */
     public function toArray(): array
     {

@@ -24,7 +24,7 @@ final class Handler extends ExceptionHandler
     {
         if ($exception instanceof BusinessException) {
             return ApiResponse::fail(
-                code: $exception->getCode(),
+                code: $exception->code(),
                 message: $exception->getMessage(),
                 status: $exception->status(),
                 data: $exception->data(),

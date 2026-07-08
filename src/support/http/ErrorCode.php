@@ -5,36 +5,36 @@ namespace Z0x\WebmanStarter\Support\Http;
 
 final class ErrorCode
 {
-    public const SUCCESS = 0;
+    public const SUCCESS = 'success';
 
-    public const PARAMETER_ERROR = 40001;
-    public const VALIDATION_FAILED = 40002;
-    public const MISSING_PARAMETER = 40003;
+    public const PARAMETER_ERROR = 'parameter_error';
+    public const VALIDATION_FAILED = 'validation_failed';
+    public const MISSING_PARAMETER = 'missing_parameter';
 
-    public const UNAUTHENTICATED = 40101;
-    public const TOKEN_MISSING = 40102;
-    public const TOKEN_INVALID = 40103;
-    public const TOKEN_EXPIRED = 40104;
+    public const UNAUTHENTICATED = 'unauthenticated';
+    public const TOKEN_MISSING = 'token_missing';
+    public const TOKEN_INVALID = 'token_invalid';
+    public const TOKEN_EXPIRED = 'token_expired';
 
-    public const FORBIDDEN = 40301;
+    public const FORBIDDEN = 'forbidden';
 
-    public const NOT_FOUND = 40401;
-    public const ROUTE_NOT_FOUND = 40402;
+    public const NOT_FOUND = 'not_found';
+    public const ROUTE_NOT_FOUND = 'route_not_found';
 
-    public const METHOD_NOT_ALLOWED = 40501;
+    public const METHOD_NOT_ALLOWED = 'method_not_allowed';
 
-    public const CONFLICT = 40901;
+    public const CONFLICT = 'conflict';
 
-    public const PAYLOAD_TOO_LARGE = 41301;
+    public const PAYLOAD_TOO_LARGE = 'payload_too_large';
 
-    public const UNSUPPORTED_MEDIA_TYPE = 41501;
+    public const UNSUPPORTED_MEDIA_TYPE = 'unsupported_media_type';
 
-    public const UNPROCESSABLE_ENTITY = 42201;
+    public const UNPROCESSABLE_ENTITY = 'unprocessable_entity';
 
-    public const TOO_MANY_REQUESTS = 42901;
+    public const TOO_MANY_REQUESTS = 'too_many_requests';
 
-    public const INTERNAL_ERROR = 50001;
-    public const BAD_GATEWAY = 50201;
-    public const SERVICE_UNAVAILABLE = 50301;
-    public const GATEWAY_TIMEOUT = 50401;
+    public const INTERNAL_ERROR = 'internal_error';
+    public const BAD_GATEWAY = 'bad_gateway';
+    public const SERVICE_UNAVAILABLE = 'service_unavailable';
+    public const GATEWAY_TIMEOUT = 'gateway_timeout';
 }

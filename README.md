@@ -84,7 +84,7 @@ Create custom business exceptions when the built-in helpers are not specific eno
 ```php
 throw BusinessException::make(
     message: '订单状态不允许取消',
-    code: 300001,
+    code: 'order_status_not_cancelable',
     status: 409,
     data: ['order_id' => 123]
 );
@@ -107,7 +107,7 @@ return [
 
 ```json
 {
-  "code": 50001,
+  "code": "internal_error",
   "message": "服务内部错误",
   "data": null,
   "trace_id": "018f7c2e-..."
@@ -120,7 +120,7 @@ Successful response:
 
 ```json
 {
-  "code": 0,
+  "code": "success",
   "message": "success",
   "data": {},
   "trace_id": "018f7c2e-..."
@@ -131,7 +131,7 @@ Failed response:
 
 ```json
 {
-  "code": 40002,
+  "code": "validation_failed",
   "message": "参数验证失败",
   "data": null,
   "trace_id": "018f7c2e-...",
@@ -141,7 +141,7 @@ Failed response:
 }
 ```
 
-See [docs/api-response.md](docs/api-response.md) for the full response contract and error code ranges.
+See [docs/api-response.md](docs/api-response.md) for the full response contract and stable error code strings.
 
 ## Project Structure
 
