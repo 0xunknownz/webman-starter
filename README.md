@@ -147,11 +147,11 @@ See [docs/api-response.md](docs/api-response.md) for the full response contract 
 
 ```text
 src/
-  support/
-    exception/
+  Support/
+    Exception/
       BusinessException.php
       Handler.php
-    http/
+    Http/
       ApiResponse.php
       ErrorCode.php
       Pagination.php
