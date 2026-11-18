@@ -14,6 +14,7 @@
 
 declare(strict_types=1);
 
+use app\example\RecordRoutes;
 use Z0x\WebmanStarter\saas\http\AuthFactory;
 use Z0x\WebmanStarter\saas\http\Routes;
 
@@ -30,6 +31,11 @@ if (getenv('WEBMAN_STARTER_ROUTES_ENABLED') === '1') {
         emailSender: $settings['email_sender'],
         emailPolicy: $settings['email_policy'],
         operatorRecoveryVerifier: $settings['operator_recovery_verifier'],
+        invitationPageUrl: $settings['invitation_page_url'] ?? null,
     );
-    Routes::register($prefix === false ? Routes::DEFAULT_PREFIX : $prefix, $auth);
+    $prefix = $prefix === false ? Routes::DEFAULT_PREFIX : $prefix;
+    Routes::register($prefix, $auth);
+    if ($auth !== null && getenv('STARTER_EXAMPLE_RECORDS_ENABLED') === '1') {
+        RecordRoutes::register($prefix, $auth, $settings['clock']);
+    }
 }

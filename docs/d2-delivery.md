@@ -7,12 +7,12 @@
 | 1 | 通过 | [#14 组织状态、订阅快照与席位事务](https://github.com/0xunknownz/webman-starter/issues/14) | #9、#10、#11（D1） |
 | 1 | 通过 | [#15 邀请短信与单次短期凭据](https://github.com/0xunknownz/webman-starter/issues/15) | #3、#9（D1） |
 | 1 | 通过 | [#16 派生 Composer 模板准备](https://github.com/0xunknownz/webman-starter/issues/16) | #2（D1） |
-| 2 | 待验收 | [#17 组织鉴权与订阅访问策略](https://github.com/0xunknownz/webman-starter/issues/17) | #14 |
-| 3 | 待验收 | [#18 普通成员邀请与链接生命周期](https://github.com/0xunknownz/webman-starter/issues/18) | #14、#17 |
-| 3 | 待验收 | [#21 成员列表、角色与治理](https://github.com/0xunknownz/webman-starter/issues/21) | #17 |
-| 4 | 待验收 | [#19 平台开通、改邀与运营恢复](https://github.com/0xunknownz/webman-starter/issues/19) | #18 |
-| 4 | 待验收 | [#20 邀请解析、验证与接受](https://github.com/0xunknownz/webman-starter/issues/20) | #15、#18 |
-| 4 | 待验收 | [#22 所有权转移与接收人待办](https://github.com/0xunknownz/webman-starter/issues/22) | #21 |
+| 2 | 通过 | [#17 组织鉴权与订阅访问策略](https://github.com/0xunknownz/webman-starter/issues/17) | #14 |
+| 3 | 通过 | [#18 普通成员邀请与链接生命周期](https://github.com/0xunknownz/webman-starter/issues/18) | #14、#17 |
+| 3 | 通过 | [#21 成员列表、角色与治理](https://github.com/0xunknownz/webman-starter/issues/21) | #17 |
+| 4 | 通过 | [#19 平台开通、改邀与运营恢复](https://github.com/0xunknownz/webman-starter/issues/19) | #18 |
+| 4 | 通过 | [#20 邀请解析、验证与接受](https://github.com/0xunknownz/webman-starter/issues/20) | #15、#18 |
+| 4 | 通过 | [#22 所有权转移与接收人待办](https://github.com/0xunknownz/webman-starter/issues/22) | #21 |
 | 5 | 待验收 | [#23 示例联调、自动化验收与发布](https://github.com/0xunknownz/webman-starter/issues/23) | #16、#19、#20、#22 |
 | 6 | 待验收 | [#24 发布版模板的独立双组织验收](https://github.com/0xunknownz/webman-starter/issues/24) | #23 |
 
@@ -33,12 +33,12 @@
 - [x] [#14 组织状态、订阅快照与席位事务](https://github.com/0xunknownz/webman-starter/issues/14)
 - [x] [#15 邀请短信与单次短期凭据](https://github.com/0xunknownz/webman-starter/issues/15)
 - [x] [#16 派生 Composer 模板准备](https://github.com/0xunknownz/webman-starter/issues/16)
-- [ ] [#17 组织鉴权与订阅访问策略](https://github.com/0xunknownz/webman-starter/issues/17)
-- [ ] [#18 普通成员邀请与链接生命周期](https://github.com/0xunknownz/webman-starter/issues/18)
-- [ ] [#21 成员列表、角色与治理](https://github.com/0xunknownz/webman-starter/issues/21)
-- [ ] [#19 平台开通、改邀与运营恢复](https://github.com/0xunknownz/webman-starter/issues/19)
-- [ ] [#20 邀请解析、验证与接受](https://github.com/0xunknownz/webman-starter/issues/20)
-- [ ] [#22 所有权转移与接收人待办](https://github.com/0xunknownz/webman-starter/issues/22)
+- [x] [#17 组织鉴权与订阅访问策略](https://github.com/0xunknownz/webman-starter/issues/17)
+- [x] [#18 普通成员邀请与链接生命周期](https://github.com/0xunknownz/webman-starter/issues/18)
+- [x] [#21 成员列表、角色与治理](https://github.com/0xunknownz/webman-starter/issues/21)
+- [x] [#19 平台开通、改邀与运营恢复](https://github.com/0xunknownz/webman-starter/issues/19)
+- [x] [#20 邀请解析、验证与接受](https://github.com/0xunknownz/webman-starter/issues/20)
+- [x] [#22 所有权转移与接收人待办](https://github.com/0xunknownz/webman-starter/issues/22)
 - [ ] [#23 示例联调、自动化验收与发布](https://github.com/0xunknownz/webman-starter/issues/23)
 - [ ] [#24 发布版模板的独立双组织验收](https://github.com/0xunknownz/webman-starter/issues/24)
 

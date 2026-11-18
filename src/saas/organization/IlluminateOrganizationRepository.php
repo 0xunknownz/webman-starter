@@ -107,7 +107,16 @@ final class IlluminateOrganizationRepository implements OrganizationRepositoryIn
             return (int) $members->lockForUpdate()->count() + (int) $invites->lockForUpdate()->count();
         }
 
-        return (int) $members->count() + (int) $invites->count();
+        // One read snapshot avoids transient double counting when a reservation becomes a membership.
+        $row = $this->connection->selectOne(
+            'SELECT (SELECT COUNT(*) FROM starter_memberships WHERE organization_id = ?) + '
+                . '(SELECT COUNT(*) FROM starter_invitations WHERE organization_id = ? '
+                . "AND status = 'pending' AND expires_at > ? AND reserved = 1) AS occupied",
+            [$organizationId, $organizationId, gmdate('Y-m-d H:i:s', $now)],
+            false,
+        );
+
+        return (int) $row->occupied;
     }
 
     public function assertInvitationCapacity(Organization $organization, MainlandMobileNumber $phone, int $now, ?int $replacing = null): void
