@@ -139,6 +139,10 @@ function testEmailSignIn(Fixtures $fixtures, SmsLoginFixture $smsLogin): void
         emailLogin($port, EMAIL_ADMIN, $password, 429, 'password_login_locked');
         $smsLogin->clock(SMS_TIME + 900);
         emailLogin($port, EMAIL_ADMIN, $password);
+        $currentSession = sessionTokens(emailLogin($port, EMAIL_ADMIN, $password)['data']);
+        sessionLogout($port, $currentSession['access_token']);
+        emailPassword($port, $currentSession['access_token'], 'after-logout', 401, 'token_invalid');
+        emailLogin($port, EMAIL_ADMIN, $password);
     });
     $stored = $db->query("SELECT email, email_epoch, email_verified_at, password_hash FROM starter_accounts WHERE id = $accountId")
         ->fetch(\PDO::FETCH_ASSOC);

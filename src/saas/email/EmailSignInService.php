@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Z0x\WebmanStarter\saas\email;
 
 use Z0x\WebmanStarter\saas\domain\SubmissionStatus;
+use Z0x\WebmanStarter\saas\session\SessionIdentity;
 use Z0x\WebmanStarter\saas\session\SessionService;
 use Z0x\WebmanStarter\Support\Exception\BusinessException;
 
@@ -54,10 +55,12 @@ final class EmailSignInService
         return $challenge['id'];
     }
 
-    public function bind(int $accountId, EmailAddress $email, string $id, #[\SensitiveParameter] string $code, int $now): void
+    public function bind(SessionIdentity $identity, EmailAddress $email, string $id, #[\SensitiveParameter] string $code, int $now): void
     {
+        $accountId = $identity->accountId;
         try {
-            $this->repository->withLockedAccount($accountId, function (?array $account) use ($accountId, $email, $id, $code, $now): void {
+            $this->sessions->withCurrentIdentity($identity, $now, function () use ($accountId, $email, $id, $code, $now): void {
+                $account = $this->repository->account($accountId);
                 if ($account === null) {
                     throw BusinessException::tokenInvalid();
                 }
@@ -76,10 +79,12 @@ final class EmailSignInService
         }
     }
 
-    public function setPassword(int $accountId, #[\SensitiveParameter] mixed $password, int $now): void
+    public function setPassword(SessionIdentity $identity, #[\SensitiveParameter] mixed $password, int $now): void
     {
         $hash = Password::hash($password);
-        $this->repository->withLockedAccount($accountId, function (?array $account) use ($accountId, $hash, $now): void {
+        $accountId = $identity->accountId;
+        $this->sessions->withCurrentIdentity($identity, $now, function () use ($accountId, $hash, $now): void {
+            $account = $this->repository->account($accountId);
             if ($account === null) {
                 throw BusinessException::tokenInvalid();
             }

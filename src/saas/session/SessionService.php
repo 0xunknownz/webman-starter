@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Z0x\WebmanStarter\saas\session;
 
+use Closure;
 use DomainException;
 use Firebase\JWT\JWT;
 use Illuminate\Database\ConnectionInterface;
@@ -184,6 +185,25 @@ final class SessionService
             $session['account_id'], $claims->sid, $claims->purpose, $state['accountEpoch'], $state['platformEpoch'],
             $session['account_epoch'],
         );
+    }
+
+    /** @template T @param Closure():T $operation @return T */
+    public function withCurrentIdentity(SessionIdentity $identity, int $now, Closure $operation): mixed
+    {
+        $platform = $identity->purpose === self::PURPOSE_PLATFORM;
+
+        return $this->accounts->withLockedState($identity->accountId, $platform, function (?array $state) use ($identity, $now, $platform, $operation): mixed {
+            [, $session] = $this->readSession($identity->sessionId, $now);
+            if ($session['account_id'] !== $identity->accountId || $session['purpose'] !== $identity->purpose
+                || ($session['account_epoch'] ?? null) !== $identity->issuedAccountEpoch
+                || ($state['accountEpoch'] ?? null) !== $identity->accountEpoch
+                || ($state['platformEpoch'] ?? null) !== $identity->platformEpoch) {
+                throw BusinessException::tokenInvalid();
+            }
+            $this->requireCurrentState($state, $session, $platform);
+
+            return $operation();
+        });
     }
 
     /** @return array{string, array{session_id: string, account_id: int, purpose: string, expires_at: int, account_epoch?: string, platform_epoch?: ?string, refresh_hash?: string}} */

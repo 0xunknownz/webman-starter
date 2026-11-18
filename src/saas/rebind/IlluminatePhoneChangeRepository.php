@@ -7,6 +7,7 @@ namespace Z0x\WebmanStarter\saas\rebind;
 use Closure;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\QueryException;
+use RuntimeException;
 use Z0x\WebmanStarter\saas\contract\PlatformAdminRepositoryInterface;
 use Z0x\WebmanStarter\saas\domain\MainlandMobileNumber;
 use Z0x\WebmanStarter\saas\infrastructure\IlluminatePlatformAdminRepository;
@@ -217,9 +218,9 @@ final class IlluminatePhoneChangeRepository implements PhoneChangeRepositoryInte
         return $mode === PhoneChangeFlow::MANUAL_RECOVERY || $mode === PhoneChangeFlow::OFFLINE_RECOVERY;
     }
 
-    private static function storageError(): BusinessException
+    private static function storageError(): RuntimeException
     {
         // QueryException may embed the bound phone numbers. Use a generic error without a chained cause.
-        return new BusinessException('服务内部错误', 'internal_error', 500);
+        return new RuntimeException('Phone change database operation failed.');
     }
 }

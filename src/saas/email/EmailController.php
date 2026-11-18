@@ -40,7 +40,7 @@ final class EmailController
         $email = EmailAddress::fromInput($request->post('email'));
         $id = self::text($request, 'challenge_id', 100);
         $code = self::text($request, 'code', 32);
-        $this->email->bind($identity->accountId, $email, $id, $code, ($this->clock)());
+        $this->email->bind($identity, $email, $id, $code, ($this->clock)());
 
         return ApiResponse::success(request: $request)->header('Cache-Control', 'no-store');
     }
@@ -48,7 +48,7 @@ final class EmailController
     public function setPassword(Request $request): Response
     {
         $identity = $this->auth->identity($request);
-        $this->email->setPassword($identity->accountId, $request->post('password'), ($this->clock)());
+        $this->email->setPassword($identity, $request->post('password'), ($this->clock)());
 
         return ApiResponse::success(request: $request)->header('Cache-Control', 'no-store');
     }

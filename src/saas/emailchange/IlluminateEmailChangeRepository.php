@@ -7,6 +7,7 @@ namespace Z0x\WebmanStarter\saas\emailchange;
 use Closure;
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\QueryException;
+use RuntimeException;
 use Z0x\WebmanStarter\saas\email\EmailAddress;
 use Z0x\WebmanStarter\saas\infrastructure\IlluminatePlatformAdminRepository;
 use Z0x\WebmanStarter\saas\session\SessionIdentity;
@@ -48,7 +49,7 @@ final class IlluminateEmailChangeRepository implements EmailChangeRepositoryInte
             }, $attempts);
         } catch (QueryException) {
             // The original SQL exception may contain contact information or session identifiers.
-            throw new BusinessException('服务内部错误', 'internal_error', 500);
+            throw new RuntimeException('Email change database operation failed.');
         }
     }
 
