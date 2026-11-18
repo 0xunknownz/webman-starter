@@ -13,8 +13,8 @@
 | 4 | 通过 | [#19 平台开通、改邀与运营恢复](https://github.com/0xunknownz/webman-starter/issues/19) | #18 |
 | 4 | 通过 | [#20 邀请解析、验证与接受](https://github.com/0xunknownz/webman-starter/issues/20) | #15、#18 |
 | 4 | 通过 | [#22 所有权转移与接收人待办](https://github.com/0xunknownz/webman-starter/issues/22) | #21 |
-| 5 | 待验收 | [#23 示例联调、自动化验收与发布](https://github.com/0xunknownz/webman-starter/issues/23) | #16、#19、#20、#22 |
-| 6 | 待验收 | [#24 发布版模板的独立双组织验收](https://github.com/0xunknownz/webman-starter/issues/24) | #23 |
+| 5 | 通过 | [#23 示例联调、自动化验收与发布](https://github.com/0xunknownz/webman-starter/issues/23) | #16、#19、#20、#22 |
+| 6 | 通过 | [#24 发布版模板的独立双组织验收](https://github.com/0xunknownz/webman-starter/issues/24) | #23 |
 
 ## 并行与集成顺序
 
@@ -39,7 +39,7 @@
 - [x] [#19 平台开通、改邀与运营恢复](https://github.com/0xunknownz/webman-starter/issues/19)
 - [x] [#20 邀请解析、验证与接受](https://github.com/0xunknownz/webman-starter/issues/20)
 - [x] [#22 所有权转移与接收人待办](https://github.com/0xunknownz/webman-starter/issues/22)
-- [ ] [#23 示例联调、自动化验收与发布](https://github.com/0xunknownz/webman-starter/issues/23)
-- [ ] [#24 发布版模板的独立双组织验收](https://github.com/0xunknownz/webman-starter/issues/24)
+- [x] [#23 示例联调、自动化验收与发布](https://github.com/0xunknownz/webman-starter/issues/23)
+- [x] [#24 发布版模板的独立双组织验收](https://github.com/0xunknownz/webman-starter/issues/24)
 
 以各工单的验收条件为准。使用独立 MySQL、Redis、真实 Webman HTTP 及适用的 CLI，消息由受控发送器捕获。发布版模板须经另一名开发者从干净 PHP 8.1 环境按文档安装，通过双组织 HTTP 隔离验收后进入 D3。

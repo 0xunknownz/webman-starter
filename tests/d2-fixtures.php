@@ -9,7 +9,7 @@ require_once __DIR__ . '/acceptance.php';
 function prepareD2Host(Fixtures $fixtures, string $database, bool $published = false): SmsLoginFixture
 {
     $fixtures->startServices();
-    $fixtures->database($database);
+    $sql = $fixtures->database($database);
     if ($published) {
         check(PHP_MAJOR_VERSION === 8 && PHP_MINOR_VERSION === 1, 'Use a clean PHP 8.1 environment for release acceptance');
         clearstatcache(true, $fixtures->sqlLog);
@@ -21,7 +21,8 @@ function prepareD2Host(Fixtures $fixtures, string $database, bool $published = f
             'z0x/webman-starter-template', $fixtures->host, '1.0.0',
         ], env: ['COMPOSER_CACHE_DIR' => "$fixtures->dir/clean-cache"])->result(180);
         check($exit === 0, "Published Composer installation failed:\n$output");
-        check(file_get_contents($fixtures->sqlLog, false, null, $offset) === '', 'Composer create-project must not access MySQL');
+        check(file_get_contents($fixtures->sqlLog, false, null, $offset) === '' && $sql->query('SHOW TABLES')->fetchAll() === [],
+            'Composer create-project must leave MySQL untouched');
         $lock = json_decode(file_get_contents("$fixtures->host/composer.lock"), true, flags: JSON_THROW_ON_ERROR);
         $packages = array_column($lock['packages'], null, 'name');
         $starter = $packages['z0x/webman-starter'] ?? [];

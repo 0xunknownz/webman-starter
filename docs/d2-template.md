@@ -85,4 +85,4 @@ php start.php start
 php tests/template-candidate.php
 ```
 
-测试将两个候选 ZIP 加入隔离的临时 Composer 仓库，通过非交互 `create-project` 安装，并检查实际 PHP 和依赖。使用独立 MySQL 验证建项留空、迁移可重复运行、管理员只能显式初始化、更新不访问数据库。最后启动生成的 Webman 项目并检查显式启用的健康路由。候选模板 `1.0.0` 与基座 `1.1.0`、`1.1.1` 只用于本地测试。已使用 PHP 8.1.34、Composer 2.5.1 和 2.11.2、MySQL 8.0.46 与 Redis 8.6.2 验证，安装解析到 Webman 框架 v2.2.5、`webman/database` v2.1.10 和 `webman/redis` v2.1.5。发布版本上的独立双组织 HTTP 验收由 [#24](https://github.com/0xunknownz/webman-starter/issues/24) 执行。
+测试将两个候选 ZIP 加入隔离的临时 Composer 仓库，通过非交互 `create-project` 安装，并检查实际 PHP 和依赖。使用独立 MySQL 验证建项留空、迁移可重复运行、管理员只能显式初始化、更新不访问数据库。最后启动生成的 Webman 项目并检查显式启用的健康路由。候选模板 `1.0.0` 与基座 `1.1.0`、`1.1.1` 只用于本地测试。已使用 PHP 8.1.34、Composer 2.5.1 和 2.11.2、MySQL 8.0.46 与 Redis 8.6.2 验证，安装解析到 Webman 框架 v2.2.5、`webman/database` v2.1.10 和 `webman/redis` v2.1.5。`php tests/d2-example.php --published` 可复现实例，使用干净 Composer 缓存从公共索引安装发布版，并在隔离的 MySQL 和 Redis 上启动 Webman。现场验收记录见 [#24](https://github.com/0xunknownz/webman-starter/issues/24)。
