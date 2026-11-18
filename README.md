@@ -14,7 +14,7 @@ Webman starter support package for common API response conventions, trace IDs, e
 ## Requirements
 
 - PHP 8.1 or newer.
-- A Webman application.
+- A Webman 2.1+ application with MySQL, Redis, and the `pdo_mysql` and `redis` PHP extensions.
 - Composer.
 
 ## Installation
@@ -30,6 +30,10 @@ For local development, install dependencies from this repository:
 ```bash
 composer install
 ```
+
+## SaaS foundation
+
+See [D1 setup and operations](docs/saas-d1.md) for the Webman example, explicit database migration and first platform administrator initialization.
 
 ## Usage
 
