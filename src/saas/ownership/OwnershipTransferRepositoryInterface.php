@@ -13,8 +13,7 @@ interface OwnershipTransferRepositoryInterface extends OrganizationMembershipRep
 
     public function find(int $organizationId, int $transferId, bool $lock = false): ?OwnershipTransfer;
 
-    /** @return array<int, int> Organization IDs mapped to their earliest pending expiry. */
-    public function inboxOrganizations(int $recipientId): array;
+    public function hasExpiredPending(int $organizationId, int $recipientId, int $now): bool;
 
     /** @return list<array{transfer_id:int, proposer_display_name:string, expires_at:string}> */
     public function inbox(int $organizationId, int $recipientId, int $now): array;

@@ -54,32 +54,24 @@ final class OwnershipTransferService
     }
 
     /** @return list<array{transfer_id:int, organization_id:int, organization_name:string, proposer_display_name:string, expires_at:string}> */
-    public function pending(SessionIdentity $identity): array
+    public function pending(SessionIdentity $identity, int $organizationId): array
     {
-        if ($identity->purpose !== SessionService::PURPOSE_ORGANIZATION) {
-            throw new BusinessException('认证令牌用途不匹配', 'token_purpose_mismatch', 403);
-        }
-        $result = [];
         $operation = OrganizationOperation::OwnershipTransferAccept;
+        $now = ($this->clock)();
+        $organization = $this->access->require($identity, $organizationId, $operation, $now)->organization;
         $recipient = $identity->accountId;
-        foreach ($this->transfers->inboxOrganizations($recipient) as $organizationId => $earliest) {
-            try {
-                if ($earliest <= ($this->clock)()) {
-                    $this->write($identity, $organizationId, $operation,
-                        function (OrganizationAccess $context): void {
-                            $this->invalidator->expirePending($context->organization->id, ($this->clock)(), $context->accountId);
-                        });
-                }
-                $now = ($this->clock)();
-                $organization = $this->access->require($identity, $organizationId, $operation, $now)->organization;
-                foreach ($this->transfers->inbox($organizationId, $recipient, $now) as $transfer) {
-                    $result[] = $transfer + ['organization_id' => $organization->id, 'organization_name' => $organization->name];
-                }
-            } catch (BusinessException $exception) {
-                if (!in_array($exception->status(), [403, 404], true)) {
-                    throw $exception;
-                }
-            }
+        if ($this->transfers->hasExpiredPending($organization->id, $recipient, $now)) {
+            $this->write($identity, $organization->id, $operation,
+                function (OrganizationAccess $context): void {
+                    $this->invalidator->expirePending($context->organization->id, ($this->clock)(), $context->accountId);
+                });
+            $now = ($this->clock)();
+            $organization = $this->access->require($identity, $organizationId, $operation, $now)->organization;
+        }
+
+        $result = [];
+        foreach ($this->transfers->inbox($organization->id, $recipient, $now) as $transfer) {
+            $result[] = $transfer + ['organization_id' => $organization->id, 'organization_name' => $organization->name];
         }
 
         return $result;

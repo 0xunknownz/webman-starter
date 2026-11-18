@@ -23,10 +23,11 @@ final class OwnershipTransferController
         return ApiResponse::created($transfer, request: $request)->header('Cache-Control', 'no-store');
     }
 
-    public function pending(Request $request, SessionIdentity $identity): Response
+    public function pending(Request $request, SessionIdentity $identity, string $organizationId): Response
     {
-        return ApiResponse::success(['transfers' => $this->service->pending($identity)], request: $request)
-            ->header('Cache-Control', 'no-store');
+        $transfers = $this->service->pending($identity, self::id($organizationId));
+
+        return ApiResponse::success(['transfers' => $transfers], request: $request)->header('Cache-Control', 'no-store');
     }
 
     public function revoke(Request $request, SessionIdentity $identity, string $organizationId, string $transferId): Response

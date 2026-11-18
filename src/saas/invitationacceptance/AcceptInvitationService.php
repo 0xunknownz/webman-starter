@@ -52,7 +52,7 @@ final class AcceptInvitationService
     {
         $invitation = $this->lifecycle->resolve($token);
         $now = ($this->clock)();
-        self::requireTarget($invitation, $phone, $now);
+        $this->requireVerifiable($invitation, $phone, $now);
 
         return $this->verification->send($invitation->id, $invitation->phone, $ip, $now);
     }
@@ -66,7 +66,7 @@ final class AcceptInvitationService
     ): array {
         $invitation = $this->lifecycle->resolve($token);
         $now = ($this->clock)();
-        self::requireTarget($invitation, $phone, $now);
+        $this->requireVerifiable($invitation, $phone, $now);
         $proof = $this->verification->verify($invitation->id, $invitation->phone, $challengeId, $code, $now);
 
         return ['credential' => $proof['credential'], 'expires_at' => gmdate(DATE_ATOM, $proof['expires_at'])];
@@ -105,7 +105,14 @@ final class AcceptInvitationService
             throw Invitation::invalid();
         }
         $this->verification->requireCredential($invitation->id, $invitation->phone, $credential, $now);
-        $this->requireEligible($organization, $invitation, $now);
+        self::requireOrganizationEligibility($organization, $invitation->role, $now);
+        if ($invitation->role === OrganizationRole::Owner && $this->acceptance->hasOwner($organization->id)) {
+            throw Invitation::invalid();
+        }
+        // Acceptance converts an active reservation, so total occupancy must fit without adding another seat.
+        if ($organization->seatLimit === null || $this->organizations->seatOccupancy($organization->id, $now) > $organization->seatLimit) {
+            throw new BusinessException('组织席位不足', 'seat_limit_exceeded', 409);
+        }
         if ($accountId !== null && $this->acceptance->hasMember($organization->id, $accountId)) {
             throw Invitation::invalid();
         }
@@ -138,7 +145,14 @@ final class AcceptInvitationService
         }
     }
 
-    private function requireEligible(Organization $organization, Invitation $invitation, int $now): void
+    private function requireVerifiable(Invitation $invitation, string $phone, int $now): void
+    {
+        self::requireTarget($invitation, $phone, $now);
+        $organization = $this->organizations->find($invitation->organizationId) ?? throw BusinessException::notFound();
+        self::requireOrganizationEligibility($organization, $invitation->role, $now);
+    }
+
+    private static function requireOrganizationEligibility(Organization $organization, OrganizationRole $role, int $now): void
     {
         if ($organization->archived) {
             throw new BusinessException('组织已归档', 'organization_archived', 403);
@@ -146,26 +160,18 @@ final class AcceptInvitationService
         if ($organization->suspended) {
             throw new BusinessException('组织已停用', 'organization_suspended', 403);
         }
-        if (!$organization->activated && $invitation->role !== OrganizationRole::Owner) {
+        if (!$organization->activated && $role !== OrganizationRole::Owner) {
             throw new BusinessException('组织尚未激活', 'organization_pending', 403);
         }
-        if ($invitation->role === OrganizationRole::Owner
-            && ($organization->activated || $this->acceptance->hasOwner($organization->id))) {
-            throw Invitation::invalid();
-        }
-        if ($organization->activated && $invitation->role !== OrganizationRole::Member) {
+        if ($organization->activated && $role !== OrganizationRole::Member) {
             throw Invitation::invalid();
         }
         $status = $organization->subscription->statusAt($now);
         if ($status === SubscriptionWindow::EXPIRED) {
             throw new BusinessException('订阅已到期', 'subscription_expired', 403);
         }
-        if ($status === SubscriptionWindow::INACTIVE && $invitation->role !== OrganizationRole::Owner) {
+        if ($status === SubscriptionWindow::INACTIVE && $role !== OrganizationRole::Owner) {
             throw new BusinessException('订阅尚未生效', 'subscription_inactive', 403);
-        }
-        // Acceptance converts an active reservation, so total occupancy must fit without adding another seat.
-        if ($organization->seatLimit === null || $this->organizations->seatOccupancy($organization->id, $now) > $organization->seatLimit) {
-            throw new BusinessException('组织席位不足', 'seat_limit_exceeded', 409);
         }
     }
 }

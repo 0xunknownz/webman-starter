@@ -21,8 +21,8 @@ final class OwnershipTransferRoutes
         $resource = $collection . '/{transferId:[1-9][0-9]*}';
         Route::post($collection, static fn (Request $request, string $organizationId): Response =>
             $auth->ownershipTransferController()->start($request, $request->starterIdentity, $organizationId))->middleware($session);
-        Route::get('/ownership-transfers/pending', static fn (Request $request): Response =>
-            $auth->ownershipTransferController()->pending($request, $request->starterIdentity))->middleware($session);
+        Route::get($collection . '/pending', static fn (Request $request, string $organizationId): Response =>
+            $auth->ownershipTransferController()->pending($request, $request->starterIdentity, $organizationId))->middleware($session);
         Route::delete($resource, static fn (Request $request, string $organizationId, string $transferId): Response =>
             $auth->ownershipTransferController()->revoke($request, $request->starterIdentity, $organizationId, $transferId))->middleware($session);
         Route::post($resource . '/accept', static fn (Request $request, string $organizationId, string $transferId): Response =>

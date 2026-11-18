@@ -100,7 +100,7 @@ function testInvitationAcceptance(Fixtures $fixture, SmsLoginFixture $qa, PDO $s
     check($otherOwner['account_id'] === $accepted['account_id'], 'An existing owner can own another organization with the same account');
 
     testInvitationMemberRace($qa, $sql, $port, $owner, $org, $otherId, $now);
-    testInvitationEligibility($qa, $sql, $port, $owner, $org, $now);
+    testInvitationEligibility($qa, $sql, $port, $platform, $owner, $org, $now);
     testInvitationRebind($fixture, $qa, $sql, $port, $org, $now + 1_300);
 }
 
@@ -202,7 +202,7 @@ function invite20WaitForLock(PDO $sql, int $count): void
 }
 
 
-function testInvitationEligibility(SmsLoginFixture $qa, PDO $sql, int $port, string $owner, int $org, int $now): void
+function testInvitationEligibility(SmsLoginFixture $qa, PDO $sql, int $port, string $platform, string $owner, int $org, int $now): void
 {
     $path = "/saas/organizations/$org/invitations";
     foreach (['revoked' => '13800138204', 'replaced' => '13800138205'] as $change => $phone) {
@@ -224,11 +224,28 @@ function testInvitationEligibility(SmsLoginFixture $qa, PDO $sql, int $port, str
 
     $phone = '13800138206';
     $body = ['token' => invite20Token(invite20Create($port, $owner, $org, $phone)), 'phone' => $phone];
-    $proof = invite20Proof($qa, $port, $body['token'], $phone);
+    $platformPath = "/saas/platform/organizations/$org";
+    $platformHeaders = sessionBearer($platform);
+    smsExpect(smsRequest($port, 'POST', "$platformPath/suspend", headers: $platformHeaders), 200, 'success', 'Suspend organization');
+    $messages = $qa->messages();
+    invite20Post($port, '/sms/send', $body, 403, 'organization_suspended');
+    check($qa->messages() === $messages, 'A suspended organization does not send an invitation SMS');
+    smsExpect(smsRequest($port, 'POST', "$platformPath/unsuspend", headers: $platformHeaders), 200, 'success', 'Unsuspend organization');
+    $send = invite20Post($port, '/sms/send', $body)['data'];
+    $sms = $qa->messages()[count($messages)];
+    $attempt = $body + ['challenge_id' => $send['challenge_id'], 'code' => $sms['code']];
     $original = $sql->query("SELECT * FROM starter_organizations WHERE id = $org")->fetch(PDO::FETCH_ASSOC);
     $patch = static function (string $column, mixed $value) use ($sql, $org): void {
         $sql->prepare("UPDATE starter_organizations SET $column = ? WHERE id = ?")->execute([$value, $org]);
     };
+    $patch('subscription_expires_at', gmdate('Y-m-d H:i:s', $now + 60));
+    try {
+        invite20Post($port, '/sms/verify', $attempt, 403, 'subscription_expired');
+    } finally {
+        $patch('subscription_expires_at', $original['subscription_expires_at']);
+    }
+    $proof = invite20Post($port, '/sms/verify', $attempt)['data'];
+
     foreach ([
         ['archived_at', gmdate('Y-m-d H:i:s', $now), 403, 'organization_archived'],
         ['suspended_at', gmdate('Y-m-d H:i:s', $now), 403, 'organization_suspended'],

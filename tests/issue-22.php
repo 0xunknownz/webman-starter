@@ -60,9 +60,8 @@ function testOwnership(SmsLoginFixture $qa, PDO $sql, int $port, int $org, int $
     $accept = static function (int $organization, string $who, int $transfer, int $status = 200, string $code = 'success') use ($request, $path): void {
         smsExpect($request('POST', $path($organization) . '/' . $transfer . '/accept', $who), $status, $code, 'Accept transfer');
     };
-    $inboxPath = '/saas/ownership-transfers/pending';
-    $inbox = static fn (string $who): array =>
-        smsExpect($request('GET', $inboxPath, $who), 200, 'success', 'List transfer inbox')['data']['transfers'];
+    $inbox = static fn (int $organization, string $who): array =>
+        smsExpect($request('GET', $path($organization) . '/pending', $who), 200, 'success', 'List transfer inbox')['data']['transfers'];
     $roles = static function (int $organization) use ($sql): array {
         $query = $sql->prepare('SELECT account_id, role FROM starter_memberships WHERE organization_id = ? ORDER BY account_id');
         $query->execute([$organization]);
@@ -71,7 +70,6 @@ function testOwnership(SmsLoginFixture $qa, PDO $sql, int $port, int $org, int $
     };
     $initialRoles = $roles($org);
 
-    smsExpect($request('GET', $inboxPath), 401, 'unauthenticated', 'Inbox requires authentication');
     $start($org, 'admin', $ids['member'], 403, 'forbidden');
     $start($org, 'owner', $ids['owner'], 403, 'forbidden');
     $start($org, 'owner', $ids['outsider'], 404, 'not_found');
@@ -79,24 +77,46 @@ function testOwnership(SmsLoginFixture $qa, PDO $sql, int $port, int $org, int $
     $start($other, 'owner', $ids['member'], 404, 'not_found');
     $ownOffer = $start($org, 'owner', $ids['admin']);
     $otherOffer = $start($other, 'outsider', $ids['member'])['transfer_id'];
+    $memberOffer = $start($org, 'owner', $ids['member'])['transfer_id'];
+    $unscoped = smsConnect($port, 'GET', '/saas/ownership-transfers/pending', null, sessionBearer($tokens['member']));
+    try {
+        $statusLine = fgets($unscoped);
+        check(is_string($statusLine) && preg_match('/\AHTTP\/\S+ 404\b/', $statusLine) === 1, 'Inbox without an organization returns 404');
+    } finally {
+        fclose($unscoped);
+    }
+    smsExpect($request('GET', $path($org) . '/pending'), 401, 'unauthenticated', 'Inbox requires authentication');
+    smsExpect($request('GET', $path($other) . '/pending', 'admin'), 404, 'not_found', 'Inbox rejects non-members');
+    smsExpect($request('GET', $path($other + 1) . '/pending', 'member'), 404, 'not_found', 'Inbox rejects unknown organizations');
     $revoked = $ownOffer['transfer_id'];
     check($ownOffer['expires_at'] === gmdate(DATE_ATOM, $expiry), 'Transfer has a seven-day lifetime');
-    check($inbox('owner') === [] && $inbox('admin') === [[
+    check($inbox($org, 'owner') === [] && $inbox($org, 'admin') === [[
         'transfer_id' => $revoked,
         'proposer_display_name' => '原所有者',
         'expires_at' => gmdate(DATE_ATOM, $expiry),
         'organization_id' => $org,
         'organization_name' => '甲组织',
     ]], 'Inbox exposes only the named recipient’s transfer and documented fields');
-    check(array_column($inbox('member'), 'transfer_id') === [$otherOffer], 'Inbox scopes another organization to its recipient');
+    check($inbox($org, 'member') === [[
+        'transfer_id' => $memberOffer,
+        'proposer_display_name' => '原所有者',
+        'expires_at' => gmdate(DATE_ATOM, $expiry),
+        'organization_id' => $org,
+        'organization_name' => '甲组织',
+    ]] && $inbox($other, 'member') === [[
+        'transfer_id' => $otherOffer,
+        'proposer_display_name' => '未设置姓名',
+        'expires_at' => gmdate(DATE_ATOM, $expiry),
+        'organization_id' => $other,
+        'organization_name' => '乙组织',
+    ]], 'An account with live offers in two organizations sees exactly the selected organization’s offer');
     $accept($org, 'member', $revoked, 404, 'not_found');
     $accept($org, 'member', $otherOffer, 404, 'not_found');
     smsExpect($request('DELETE', $path($other) . '/' . $revoked, 'outsider'), 404, 'not_found', 'Cannot revoke a foreign request');
     smsExpect($request('DELETE', $path($org) . '/' . $revoked, 'owner'), 200, 'success', 'Owner revokes own request');
     $accept($org, 'admin', $revoked, 409, 'ownership_transfer_invalid');
-    check($inbox('admin') === [] && $roles($org) === $initialRoles, 'Revocation cannot change roles');
+    check($inbox($org, 'admin') === [] && $roles($org) === $initialRoles, 'Revocation cannot change roles');
 
-    $memberOffer = $start($org, 'owner', $ids['member'])['transfer_id'];
     $members = '/saas/organizations/' . $org . '/members';
     smsExpect($request('DELETE', $members . '/' . $ids['member'], 'owner'), 200, 'success', 'Owner removes invite recipient');
     $accept($org, 'member', $memberOffer, 409, 'ownership_transfer_invalid');
@@ -107,7 +127,8 @@ function testOwnership(SmsLoginFixture $qa, PDO $sql, int $port, int $org, int $
     smsExpect($request('DELETE', $members . '/me', 'member'), 200, 'success', 'Recipient exits organization');
     $rejoin->execute([$org, $ids['member']]);
     $accept($org, 'member', $exitOffer, 409, 'ownership_transfer_invalid');
-    check(array_column($inbox('member'), 'transfer_id') === [$otherOffer], 'Remove and exit invalidate only the scoped recipient’s transfers');
+    check($inbox($org, 'member') === [] && array_column($inbox($other, 'member'), 'transfer_id') === [$otherOffer],
+        'Remove and exit invalidate only the scoped recipient’s transfers');
 
     $expiryOffer = $start($org, 'owner', $ids['admin'])['transfer_id'];
     $inboxExpiryOffer = $start($org, 'owner', $ids['member'])['transfer_id'];
@@ -120,7 +141,7 @@ function testOwnership(SmsLoginFixture $qa, PDO $sql, int $port, int $org, int $
         $sql->exec("UPDATE starter_organizations SET $changes WHERE id = $org");
         $start($org, 'owner', $ids['admin'], 403, $code);
         $accept($org, 'admin', $expiryOffer, 403, $code);
-        check($inbox('admin') === [], 'Inbox omits blocked organization ' . $code);
+        smsExpect($request('GET', $path($org) . '/pending', 'admin'), 403, $code, 'Inbox rejects blocked organizations');
         $reset = gmdate('Y-m-d H:i:s', $now);
         $sql->exec("UPDATE starter_organizations SET suspended_at = NULL, archived_at = NULL, activated_at = '$reset', "
             . "subscription_starts_at = '$reset' WHERE id = $org");
@@ -128,20 +149,32 @@ function testOwnership(SmsLoginFixture $qa, PDO $sql, int $port, int $org, int $
 
     $qa->clock($expiry - 1);
     $tokens = $login();
-    check(array_column($inbox('admin'), 'transfer_id') === [$expiryOffer], 'Transfer still appears one second before expiry');
-    $qa->clock($expiry);
-    $accept($org, 'admin', $expiryOffer, 409, 'ownership_transfer_invalid');
-    $accept($org, 'admin', $expiryOffer, 409, 'ownership_transfer_invalid');
-    check($inbox('admin') === [] && $inbox('member') === [] && $roles($org) === $initialRoles, 'At expiry, the inbox empties and ownership is unchanged');
+    check(array_column($inbox($org, 'admin'), 'transfer_id') === [$expiryOffer], 'Transfer still appears one second before expiry');
+    $transferState = static function (int $organization, int $id) use ($sql): array {
+        $query = $sql->prepare('SELECT status, resolved_at FROM starter_ownership_transfers WHERE organization_id = ? AND id = ?');
+        $query->execute([$organization, $id]);
 
+        return $query->fetch(PDO::FETCH_NUM);
+    };
+    $qa->clock($expiry);
+    $resolvedAt = gmdate('Y-m-d H:i:s', $expiry);
+    check($inbox($org, 'member') === [] && $transferState($org, $inboxExpiryOffer) === ['expired', $resolvedAt]
+        && $transferState($org, $expiryOffer) === ['pending', null] && $transferState($other, $otherOffer) === ['pending', null],
+        'At expiry, the inbox records expiry only for the selected organization and recipient');
+    $accept($org, 'admin', $expiryOffer, 409, 'ownership_transfer_invalid');
+    $accept($org, 'admin', $expiryOffer, 409, 'ownership_transfer_invalid');
+    check($inbox($org, 'admin') === [] && $roles($org) === $initialRoles, 'Expiry does not change ownership');
+
+    $otherRoles = $roles($other);
+    $control = $start($other, 'outsider', $ids['member'])['transfer_id'];
     $raceAdmin = $start($org, 'owner', $ids['admin'])['transfer_id'];
     $raceMember = $start($org, 'owner', $ids['member'])['transfer_id'];
     $sql->exec("CREATE TRIGGER qa_reject_transfer_audit BEFORE INSERT ON starter_audit_logs FOR EACH ROW "
         . "BEGIN IF NEW.action = 'ownership_transfer_completed' THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'QA rollback'; END IF; END");
     try {
         $accept($org, 'member', $raceMember, 503, 'audit_unavailable');
-        check($roles($org) === $initialRoles && array_column($inbox('member'), 'transfer_id') === [$raceMember]
-            && array_column($inbox('admin'), 'transfer_id') === [$raceAdmin], 'Failed audit rolls back roles, completion, and sibling invalidation');
+        check($roles($org) === $initialRoles && $transferState($org, $raceMember) === ['pending', null]
+            && $transferState($org, $raceAdmin) === ['pending', null], 'Failed audit rolls back roles, completion, and sibling invalidation');
     } finally {
         $sql->exec('DROP TRIGGER qa_reject_transfer_audit');
     }
@@ -159,9 +192,12 @@ function testOwnership(SmsLoginFixture $qa, PDO $sql, int $port, int $org, int $
     $accept($org, $winner, $completed, 409, 'ownership_transfer_invalid');
     $accept($org, $loser, $invalidated, 409, 'ownership_transfer_invalid');
     $start($org, 'owner', $ids[$loser], 403, 'forbidden');
-    check($roles($org) === array_replace($initialRoles, [$ids['owner'] => 'admin', $ids[$winner] => 'owner'])
-        && count(array_filter($roles($other), static fn (string $role): bool => $role === 'owner')) === 1,
-        'Race leaves one owner, demotes the old owner and does not change the other organization');
+    check($transferState($org, $completed) === ['completed', $resolvedAt]
+        && $transferState($org, $invalidated) === ['invalidated', $resolvedAt], 'Persist both terminal transfer states');
+    check($roles($org) === array_replace($initialRoles, [$ids['owner'] => 'admin', $ids[$winner] => 'owner']),
+        'Race leaves one owner and demotes the old owner');
+    check($roles($other) === $otherRoles && $transferState($other, $control) === ['pending', null]
+        && array_column($inbox($other, 'member'), 'transfer_id') === [$control], 'Preserve the other organization and its live offer');
 
     $audit = $sql->query("SELECT organization_id, action, actor_account_id, target_account_id, metadata, created_at "
         . "FROM starter_audit_logs WHERE action LIKE 'ownership_transfer_%' ORDER BY id")->fetchAll(PDO::FETCH_ASSOC);

@@ -6,6 +6,7 @@ namespace Z0x\WebmanStarter\saas\ownership;
 
 use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\Query\Builder;
+use Illuminate\Database\Query\JoinClause;
 use LogicException;
 use Z0x\WebmanStarter\saas\organizationaccess\IlluminateOrganizationMembershipRepository;
 use Z0x\WebmanStarter\saas\organizationaccess\OrganizationRole;
@@ -48,28 +49,19 @@ final class IlluminateOwnershipTransferRepository implements OwnershipTransferRe
         return $row === null ? null : self::transfer($row);
     }
 
-    public function inboxOrganizations(int $recipientId): array
+    public function hasExpiredPending(int $organizationId, int $recipientId, int $now): bool
     {
-        $rows = $this->connection->table(self::TABLE)->useWritePdo()
-            ->where('recipient_account_id', $recipientId)->where('status', 'pending')
-            ->groupBy('organization_id')->orderBy('organization_id')
-            ->select('organization_id')->selectRaw('MIN(expires_at) AS earliest')->get();
-        $result = [];
-        foreach ($rows as $row) {
-            $result[(int) $row->organization_id] = strtotime($row->earliest . ' UTC');
-        }
-
-        return $result;
+        return $this->pending($organizationId, $recipientId)->where('expires_at', '<=', self::date($now))->exists();
     }
 
     public function inbox(int $organizationId, int $recipientId, int $now): array
     {
         $rows = $this->connection->table(self::TABLE . ' as transfer')->useWritePdo()
-            ->join('starter_memberships as proposer', static function ($join): void {
+            ->join('starter_memberships as proposer', static function (JoinClause $join): void {
                 $join->on('proposer.organization_id', '=', 'transfer.organization_id')
                     ->on('proposer.account_id', '=', 'transfer.proposer_account_id')->where('proposer.role', 'owner');
             })
-            ->join('starter_memberships as recipient', static function ($join): void {
+            ->join('starter_memberships as recipient', static function (JoinClause $join): void {
                 $join->on('recipient.organization_id', '=', 'transfer.organization_id')
                     ->on('recipient.account_id', '=', 'transfer.recipient_account_id')->whereIn('recipient.role', ['admin', 'member']);
             })
