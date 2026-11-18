@@ -6,6 +6,8 @@ namespace Z0x\WebmanStarter\saas\verification;
 
 use Redis;
 use RuntimeException;
+use SensitiveParameter;
+use Z0x\WebmanStarter\saas\domain\VerificationProof;
 use Z0x\WebmanStarter\Support\Exception\BusinessException;
 
 /** Redis-backed challenges for one configured channel, product, and environment. */
@@ -74,9 +76,35 @@ final class RedisVerification
             return 3
         end
 
+        if KEYS[3] then
+            local expiresAt = tonumber(ARGV[1]) + tonumber(ARGV[4])
+            if redis.call('EXISTS', KEYS[3]) == 1 then
+                return -2
+            end
+            redis.call('HSET', KEYS[3], 'scope', KEYS[1], 'expiresAt', expiresAt)
+            redis.call('EXPIRE', KEYS[3], ARGV[4])
+        end
         redis.call('DEL', KEYS[2])
         -- Keep the issue time until native expiry to reject an older delayed issue.
         redis.call('HSET', KEYS[1], 'active', 0)
+        return 0
+        LUA;
+
+    private const REQUIRE_PROOF = <<<'LUA'
+        local proof = redis.call('HMGET', KEYS[1], 'scope', 'expiresAt')
+        if not proof[1] or tonumber(proof[2]) <= tonumber(ARGV[2]) then
+            return 1
+        end
+        if proof[1] ~= ARGV[1] then
+            return 2
+        end
+        return 0
+        LUA;
+
+    private const FORGET_PROOF = <<<'LUA'
+        if redis.call('HGET', KEYS[1], 'scope') == ARGV[1] then
+            return redis.call('DEL', KEYS[1])
+        end
         return 0
         LUA;
 
@@ -121,7 +149,7 @@ final class RedisVerification
 
         $id = bin2hex(random_bytes(16));
         $code = sprintf('%06d', random_int(0, 999999));
-        $scopeKey = $this->store->key($this->otpDomain('otp-scope'), $target, $purpose, $flow, $binding);
+        $scopeKey = $this->scopeKey($target, $purpose, $flow, $binding);
         $status = $this->store->evaluate(self::ISSUE, [$scopeKey, $this->store->key($this->otpDomain('otp-id'), $id)], [
             $now,
             $this->policy->ttlSeconds,
@@ -136,18 +164,90 @@ final class RedisVerification
         };
     }
 
-    public function verify(string $id, string $target, string $purpose, string $flow, string $binding, #[\SensitiveParameter] string $code, int $now): void
+    public function verify(string $id, string $target, string $purpose, string $flow, string $binding, #[SensitiveParameter] string $code, int $now): void
     {
+        $this->verifyChallenge($id, $target, $purpose, $flow, $binding, $code, $now);
+    }
+
+    /**
+     * Consume the challenge and mint a scoped short-term proof in one Redis operation.
+     *
+     * @internal
+     * @return array{credential: string, expires_at: int}
+     */
+    public function verifyAndIssueProof(
+        string $id,
+        string $target,
+        string $purpose,
+        string $flow,
+        string $binding,
+        #[SensitiveParameter] string $code,
+        int $now,
+    ): array {
+        $credential = bin2hex(random_bytes(32));
+        $this->verifyChallenge($id, $target, $purpose, $flow, $binding, $code, $now, $this->proofKey($credential));
+
+        return ['credential' => $credential, 'expires_at' => $now + VerificationProof::TTL];
+    }
+
+    /** @internal Read the proof without consuming it or changing its deadline. */
+    public function requireProof(
+        string $target,
+        string $purpose,
+        string $flow,
+        string $binding,
+        #[SensitiveParameter] string $credential,
+        int $now,
+    ): void {
+        if (!preg_match('/\A[0-9a-f]{64}\z/', $credential)) {
+            throw self::expired();
+        }
+        $status = $this->store->evaluate(self::REQUIRE_PROOF, [$this->proofKey($credential)], [
+            $this->scopeKey($target, $purpose, $flow, $binding), $now,
+        ]);
+        match ($status) {
+            0 => null,
+            1 => throw self::expired(),
+            2 => throw self::mismatch(),
+            default => throw new RuntimeException('Could not check the verification proof.'),
+        };
+    }
+
+    /** @internal Remove the given proof only if it belongs to this scope. */
+    public function forgetProof(string $target, string $purpose, string $flow, string $binding, #[SensitiveParameter] string $credential): void
+    {
+        if (preg_match('/\A[0-9a-f]{64}\z/', $credential)) {
+            $this->store->evaluate(self::FORGET_PROOF, [$this->proofKey($credential)], [
+                $this->scopeKey($target, $purpose, $flow, $binding),
+            ]);
+        }
+    }
+
+    private function verifyChallenge(
+        string $id,
+        string $target,
+        string $purpose,
+        string $flow,
+        string $binding,
+        #[SensitiveParameter] string $code,
+        int $now,
+        ?string $proofKey = null,
+    ): void {
         if (!preg_match('/\A[0-9a-f]{32}\z/', $id)) {
             throw self::expired();
         }
         $this->requirePurpose($purpose);
 
-        $scopeKey = $this->store->key($this->otpDomain('otp-scope'), $target, $purpose, $flow, $binding);
-        $status = $this->store->evaluate(self::VERIFY, [$scopeKey, $this->store->key($this->otpDomain('otp-id'), $id)], [
+        $scopeKey = $this->scopeKey($target, $purpose, $flow, $binding);
+        $keys = [$scopeKey, $this->store->key($this->otpDomain('otp-id'), $id)];
+        if ($proofKey !== null) {
+            $keys[] = $proofKey;
+        }
+        $status = $this->store->evaluate(self::VERIFY, $keys, [
             $now,
             $this->store->digest('otp-proof', $scopeKey, $id, $code),
             $this->policy->maxAttempts,
+            VerificationProof::TTL,
         ]);
 
         match ($status) {
@@ -158,6 +258,16 @@ final class RedisVerification
             4 => throw new BusinessException('Verification attempts exceeded.', 'verification_attempts_exceeded', 401),
             default => throw new RuntimeException('Could not verify the challenge.'),
         };
+    }
+
+    private function scopeKey(string $target, string $purpose, string $flow, string $binding): string
+    {
+        return $this->store->key($this->otpDomain('otp-scope'), $target, $purpose, $flow, $binding);
+    }
+
+    private function proofKey(#[SensitiveParameter] string $credential): string
+    {
+        return $this->store->key($this->otpDomain('verified-proof'), $credential);
     }
 
     private function otpDomain(string $domain): string

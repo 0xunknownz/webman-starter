@@ -45,6 +45,7 @@ return [
     'sms_sender' => new EasySmsSender([
         'login' => (string) getenv('STARTER_SMS_TEMPLATE_LOGIN'),
         'rebind' => (string) getenv('STARTER_SMS_TEMPLATE_REBIND'),
+        'invitation' => (string) getenv('STARTER_SMS_TEMPLATE_INVITE'),
         'account_security' => (string) getenv('STARTER_SMS_TEMPLATE_ACCOUNT_SECURITY'),
     ]),
     'email_policy' => RatePolicy::email(
@@ -59,6 +60,7 @@ return [
     'operator_recovery_verifier' => null,
     'operator_recovery_cli_enabled' => getenv('STARTER_OPERATOR_RECOVERY_CLI_ENABLED') === '1',
     'clock' => time(...),
+    'invitation_page_url' => getenv('STARTER_INVITATION_PAGE_URL') ?: null,
     'client_address' => new ClientAddress(
         $trustedProxies === false || $trustedProxies === '' ? [] : array_map('trim', explode(',', $trustedProxies)),
     ),

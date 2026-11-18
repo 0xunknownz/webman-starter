@@ -20,12 +20,36 @@ use Z0x\WebmanStarter\saas\email\RedisPasswordLoginLimiter;
 use Z0x\WebmanStarter\saas\emailchange\EmailChangeController;
 use Z0x\WebmanStarter\saas\emailchange\EmailChangeService;
 use Z0x\WebmanStarter\saas\emailchange\IlluminateEmailChangeRepository;
+use Z0x\WebmanStarter\saas\infrastructure\IlluminateOrganizationAudit;
 use Z0x\WebmanStarter\saas\infrastructure\IlluminatePlatformAdminRepository;
 use Z0x\WebmanStarter\saas\infrastructure\IlluminateSmsLoginRepository;
+use Z0x\WebmanStarter\saas\invitation\IlluminateInvitationRepository;
+use Z0x\WebmanStarter\saas\invitation\InvitationController;
+use Z0x\WebmanStarter\saas\invitation\InvitationLifecycle;
+use Z0x\WebmanStarter\saas\invitation\InvitationLink;
+use Z0x\WebmanStarter\saas\invitation\ManageInvitationsService;
+use Z0x\WebmanStarter\saas\invitationacceptance\AcceptInvitationService;
+use Z0x\WebmanStarter\saas\invitationacceptance\IlluminateInvitationAcceptanceRepository;
+use Z0x\WebmanStarter\saas\invitationacceptance\IlluminateInvitationVerificationAudit;
+use Z0x\WebmanStarter\saas\invitationacceptance\InvitationAcceptanceController;
+use Z0x\WebmanStarter\saas\invitationverification\InvitationVerificationService;
+use Z0x\WebmanStarter\saas\membership\IlluminateMembershipRepository;
+use Z0x\WebmanStarter\saas\membership\MembershipController;
+use Z0x\WebmanStarter\saas\membership\MembershipService;
 use Z0x\WebmanStarter\saas\operator\IlluminateOperatorRecoveryRepository;
 use Z0x\WebmanStarter\saas\operator\OperatorRecoveryController;
 use Z0x\WebmanStarter\saas\operator\OperatorRecoveryEvidenceVerifierInterface;
 use Z0x\WebmanStarter\saas\operator\OperatorRecoveryService;
+use Z0x\WebmanStarter\saas\organization\IlluminateOrganizationRepository;
+use Z0x\WebmanStarter\saas\organizationaccess\IlluminateOrganizationMembershipRepository;
+use Z0x\WebmanStarter\saas\organizationaccess\OrganizationAccessService;
+use Z0x\WebmanStarter\saas\organizationplatform\IlluminatePlatformOrganizationRepository;
+use Z0x\WebmanStarter\saas\organizationplatform\ManagePlatformOrganizationsService;
+use Z0x\WebmanStarter\saas\organizationplatform\PlatformOrganizationController;
+use Z0x\WebmanStarter\saas\ownership\IlluminateOwnershipTransferRepository;
+use Z0x\WebmanStarter\saas\ownership\OwnershipTransferController;
+use Z0x\WebmanStarter\saas\ownership\OwnershipTransferInvalidator;
+use Z0x\WebmanStarter\saas\ownership\OwnershipTransferService;
 use Z0x\WebmanStarter\saas\platform\IlluminatePlatformAdminMutationRepository;
 use Z0x\WebmanStarter\saas\platform\ManagePlatformAdminsService;
 use Z0x\WebmanStarter\saas\platform\PlatformAdminController;
@@ -64,10 +88,118 @@ final class AuthFactory
         private readonly ?EmailSenderInterface $emailSender = null,
         private readonly ?RatePolicy $emailPolicy = null,
         private readonly ?OperatorRecoveryEvidenceVerifierInterface $operatorRecoveryVerifier = null,
+        private readonly ?string $invitationPageUrl = null,
     ) {
         if (preg_match('/\A[A-Za-z0-9._-]+:[A-Za-z0-9._-]+:?\z/', $prefix) !== 1 || strlen($secret) < 32) {
             throw new InvalidArgumentException('Authentication requires a product:environment Redis prefix and a secret of at least 32 bytes.');
         }
+    }
+
+    public function membershipController(): MembershipController
+    {
+        $connection = Db::connection($this->databaseConnection);
+        $audit = new IlluminateOrganizationAudit($connection);
+        $transfers = new IlluminateOwnershipTransferRepository($connection);
+        $repository = new IlluminateMembershipRepository($connection, new OwnershipTransferInvalidator($transfers, $audit));
+
+        return new MembershipController(new MembershipService(
+            new OrganizationAccessService(new IlluminateOrganizationRepository($connection), $repository),
+            $this->sessions($connection, $this->redisClient()),
+            $repository,
+            $audit,
+            $this->clock,
+        ));
+    }
+
+    public function invitationController(): InvitationController
+    {
+        $connection = Db::connection($this->databaseConnection);
+        $organizations = new IlluminateOrganizationRepository($connection);
+
+        return new InvitationController(new ManageInvitationsService(
+            new OrganizationAccessService($organizations, new IlluminateOrganizationMembershipRepository($connection)),
+            $this->sessions($connection, $this->redisClient()),
+            $this->invitationLifecycle($connection),
+            $this->clock,
+        ));
+    }
+
+    public function platformOrganizationController(): PlatformOrganizationController
+    {
+        $connection = Db::connection($this->databaseConnection);
+
+        return new PlatformOrganizationController(new ManagePlatformOrganizationsService(
+            new IlluminatePlatformOrganizationRepository($connection, new IlluminateOrganizationRepository($connection)),
+            new IlluminateInvitationRepository($connection),
+            $this->invitationLifecycle($connection),
+            new IlluminateOrganizationAudit($connection),
+            $this->sessions($connection, $this->redisClient()),
+            $this->clock,
+        ));
+    }
+
+    public function invitationAcceptanceController(): InvitationAcceptanceController
+    {
+        $connection = Db::connection($this->databaseConnection);
+        $audit = new IlluminateOrganizationAudit($connection);
+        $verification = new InvitationVerificationService(
+            new RedisVerification($this->redisClient(), $this->prefix, $this->secret, $this->smsPolicy),
+            $this->smsSender,
+            new IlluminateInvitationVerificationAudit($connection, $audit),
+        );
+
+        return new InvitationAcceptanceController(new AcceptInvitationService(
+            new IlluminateOrganizationRepository($connection),
+            $this->invitationLifecycle($connection),
+            new IlluminateInvitationRepository($connection),
+            new IlluminateInvitationAcceptanceRepository($connection),
+            $verification,
+            $audit,
+            $this->clock,
+        ), $this->clientAddress);
+    }
+
+    public function ownershipTransferController(): OwnershipTransferController
+    {
+        $connection = Db::connection($this->databaseConnection);
+        $audit = new IlluminateOrganizationAudit($connection);
+        $repository = new IlluminateOwnershipTransferRepository($connection);
+
+        return new OwnershipTransferController(new OwnershipTransferService(
+            new OrganizationAccessService(new IlluminateOrganizationRepository($connection), new IlluminateOrganizationMembershipRepository($connection)),
+            $this->sessions($connection, $this->redisClient()),
+            $repository,
+            $audit,
+            $this->clock,
+        ));
+    }
+
+    /** @param array<string, list<\Z0x\WebmanStarter\saas\organizationaccess\OrganizationRole>> $permissions */
+    public function organizationAccess(array $permissions = []): OrganizationAccessService
+    {
+        $connection = Db::connection($this->databaseConnection);
+
+        return new OrganizationAccessService(new IlluminateOrganizationRepository($connection),
+            new IlluminateOrganizationMembershipRepository($connection), $permissions);
+    }
+
+    public function organizationSessions(): SessionService
+    {
+        return $this->sessions(Db::connection($this->databaseConnection), $this->redisClient());
+    }
+
+    private function invitationLifecycle(ConnectionInterface $connection): InvitationLifecycle
+    {
+        if ($this->invitationPageUrl === null) {
+            throw BusinessException::notFound();
+        }
+
+        return new InvitationLifecycle(
+            new IlluminateOrganizationRepository($connection),
+            new IlluminateInvitationRepository($connection),
+            new InvitationLink($this->invitationPageUrl, $this->secret),
+            new IlluminateOrganizationAudit($connection),
+        );
     }
 
     public function platformAdminController(): PlatformAdminController

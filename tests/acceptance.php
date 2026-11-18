@@ -330,6 +330,10 @@ function testHttp(Fixtures $fixtures): void
     echo "PASS official Webman HTTP opt-in, prefix, trace handling, validation and generic failures, and unknown-route 404\n";
 }
 
+if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') !== __FILE__) {
+    return;
+}
+
 $fixtures = null;
 $status = 0;
 try {

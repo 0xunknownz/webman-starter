@@ -7,6 +7,11 @@ use InvalidArgumentException;
 use Webman\Http\Request;
 use Webman\Http\Response;
 use Webman\Route;
+use Z0x\WebmanStarter\saas\invitation\InvitationRoutes;
+use Z0x\WebmanStarter\saas\invitationacceptance\InvitationAcceptanceRoutes;
+use Z0x\WebmanStarter\saas\membership\MembershipRoutes;
+use Z0x\WebmanStarter\saas\organizationplatform\PlatformOrganizationRoutes;
+use Z0x\WebmanStarter\saas\ownership\OwnershipTransferRoutes;
 use Z0x\WebmanStarter\saas\session\SessionService;
 use Z0x\WebmanStarter\Support\Http\ApiResponse;
 
@@ -27,6 +32,10 @@ final class Routes
                     ->header('Cache-Control', 'no-store');
             });
             if ($auth !== null) {
+                MembershipRoutes::register($auth);
+                OwnershipTransferRoutes::register($auth);
+                InvitationAcceptanceRoutes::register($auth->invitationAcceptanceController(...));
+                InvitationRoutes::register($auth->invitationController(...), new SessionMiddleware($auth, SessionService::PURPOSE_ORGANIZATION));
                 Route::post('/auth/sms/send', static fn (Request $request): Response => $auth->controller()->sendSms($request));
                 Route::post('/auth/sms/login', static fn (Request $request): Response => $auth->controller()->loginSms($request));
                 Route::post('/auth/refresh', static fn (Request $request): Response => $auth->controller()->refresh($request));
@@ -56,6 +65,7 @@ final class Routes
                     $auth->emailRecoveryController()->complete($request, $flow));
 
                 $platform = new SessionMiddleware($auth, SessionService::PURPOSE_PLATFORM);
+                PlatformOrganizationRoutes::register($auth->platformOrganizationController(...), $platform);
                 Route::get('/platform/me', static fn (Request $request): Response => AuthController::platformMe($request, $request->starterIdentity))
                     ->middleware($platform);
                 Route::post('/platform/admins', static fn (Request $request): Response => $auth->platformAdminController()->grant($request))
