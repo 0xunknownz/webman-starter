@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Z0x\WebmanStarter\saas\profile;
 
+use Closure;
 use Webman\Http\Request;
 use Webman\Http\Response;
 use Z0x\WebmanStarter\saas\session\SessionIdentity;
@@ -12,8 +13,11 @@ use Z0x\WebmanStarter\Support\Http\ApiResponse;
 
 final class ProfileController
 {
-    public function __construct(private readonly ProfileService $profiles)
-    {
+    /** @param Closure():int $clock */
+    public function __construct(
+        private readonly ProfileService $profiles,
+        private readonly Closure $clock,
+    ) {
     }
 
     public function get(Request $request, SessionIdentity $identity): Response
@@ -29,7 +33,7 @@ final class ProfileController
             return $this->get($request, $identity);
         }
 
-        return ApiResponse::success($this->profiles->update($identity->accountId, $input['display_name']), request: $request)
+        return ApiResponse::success($this->profiles->update($identity, $input['display_name'], ($this->clock)()), request: $request)
             ->header('Cache-Control', 'no-store');
     }
 

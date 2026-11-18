@@ -12,6 +12,7 @@ use Z0x\WebmanStarter\saas\email\EmailAddress;
 use Z0x\WebmanStarter\saas\email\EmailSenderInterface;
 use Z0x\WebmanStarter\saas\email\EmailVerification;
 use Z0x\WebmanStarter\saas\session\SessionIdentity;
+use Z0x\WebmanStarter\saas\session\SessionService;
 use Z0x\WebmanStarter\saas\verification\RedisVerification;
 use Z0x\WebmanStarter\Support\Exception\BusinessException;
 
@@ -23,6 +24,7 @@ final class EmailChangeService
         private readonly RedisVerification $smsVerification,
         private readonly EmailSenderInterface $emailSender,
         private readonly SmsSenderInterface $smsSender,
+        private readonly SessionService $sessions,
     ) {
     }
 
@@ -53,6 +55,7 @@ final class EmailChangeService
             );
             $target = $channel === 'sms' ? $account['phone'] : $account['email'];
             $now = $clock();
+            $this->sessions->requireLiveIdentity($identity, $now);
             $challenge = $this->issue($flow, false, $channel, $target, $ip, $now);
             if ($challenge !== null) {
                 $this->repository->create($flow, $now);
@@ -71,9 +74,10 @@ final class EmailChangeService
     public function send(string $id, SessionIdentity $identity, bool $new, string $ip, Closure $clock): string
     {
         [$channel, $target, $challenge, $now] = $this->withFlow($id, $identity, function (EmailChangeFlow $flow, array $account) use (
-            $new, $ip, $clock,
+            $identity, $new, $ip, $clock,
         ): array {
             $now = $clock();
+            $this->sessions->requireLiveIdentity($identity, $now);
             if ($new) {
                 $flow->requireSourceProof($now);
                 $this->requireAvailable($flow->newEmail);
@@ -96,9 +100,10 @@ final class EmailChangeService
         Closure $clock,
     ): int {
         $result = $this->withFlow($id, $identity, function (EmailChangeFlow $flow, array $account) use (
-            $new, $challenge, $code, $clock,
+            $identity, $new, $challenge, $code, $clock,
         ): int|BusinessException {
             $now = $clock();
+            $this->sessions->requireLiveIdentity($identity, $now);
             if ($new) {
                 $flow->requireSourceProof($now);
             }
@@ -135,11 +140,13 @@ final class EmailChangeService
     {
         $this->withFlow($id, $identity, function (EmailChangeFlow $flow) use ($identity, $clock): void {
             $now = $clock();
+            $this->sessions->requireLiveIdentity($identity, $now);
             $flow->requireSourceProof($now);
             $flow->requireNewProof($now);
             $this->requireAvailable($flow->newEmail, lock: true);
-            // The destination lock can wait behind another account. Recheck both deadlines after acquiring it.
+            // The destination lock can wait behind another account.
             $now = $clock();
+            $this->sessions->requireLiveIdentity($identity, $now);
             $flow->requireSourceProof($now);
             $flow->requireNewProof($now);
             $this->repository->commitChange($flow, $identity, $now);

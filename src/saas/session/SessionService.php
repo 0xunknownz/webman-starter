@@ -193,10 +193,8 @@ final class SessionService
         $platform = $identity->purpose === self::PURPOSE_PLATFORM;
 
         return $this->accounts->withLockedState($identity->accountId, $platform, function (?array $state) use ($identity, $now, $platform, $operation): mixed {
-            [, $session] = $this->readSession($identity->sessionId, $now);
-            if ($session['account_id'] !== $identity->accountId || $session['purpose'] !== $identity->purpose
-                || ($session['account_epoch'] ?? null) !== $identity->issuedAccountEpoch
-                || ($state['accountEpoch'] ?? null) !== $identity->accountEpoch
+            $session = $this->readIdentitySession($identity, $now);
+            if (($state['accountEpoch'] ?? null) !== $identity->accountEpoch
                 || ($state['platformEpoch'] ?? null) !== $identity->platformEpoch) {
                 throw BusinessException::tokenInvalid();
             }
@@ -204,6 +202,25 @@ final class SessionService
 
             return $operation();
         });
+    }
+
+    /** Check the Redis session. Callers must separately check SQL epochs under their existing locks. */
+    public function requireLiveIdentity(SessionIdentity $identity, int $now): void
+    {
+        $this->readIdentitySession($identity, $now);
+    }
+
+    /** @return array{session_id:string, account_epoch?:string, platform_epoch?:?string} */
+    private function readIdentitySession(SessionIdentity $identity, int $now): array
+    {
+        [, $session] = $this->readSession($identity->sessionId, $now);
+        if ($session['account_id'] !== $identity->accountId || $session['purpose'] !== $identity->purpose
+            || ($session['account_epoch'] ?? null) !== $identity->issuedAccountEpoch
+            || ($session['platform_epoch'] ?? null) !== $identity->platformEpoch) {
+            throw BusinessException::tokenInvalid();
+        }
+
+        return $session;
     }
 
     /** @return array{string, array{session_id: string, account_id: int, purpose: string, expires_at: int, account_epoch?: string, platform_epoch?: ?string, refresh_hash?: string}} */

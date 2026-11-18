@@ -9,6 +9,7 @@ use Z0x\WebmanStarter\saas\contract\SmsSenderInterface;
 use Z0x\WebmanStarter\saas\domain\MainlandMobileNumber;
 use Z0x\WebmanStarter\saas\domain\SubmissionStatus;
 use Z0x\WebmanStarter\saas\session\SessionIdentity;
+use Z0x\WebmanStarter\saas\session\SessionService;
 use Z0x\WebmanStarter\saas\verification\RedisVerification;
 use Z0x\WebmanStarter\Support\Exception\BusinessException;
 
@@ -20,22 +21,32 @@ final class PhoneChangeService
         private readonly PhoneChangeRepositoryInterface $repository,
         private readonly RedisVerification $verification,
         private readonly SmsSenderInterface $sender,
+        private readonly SessionService $sessions,
     ) {
     }
 
     /** @return array{flow_id:string, challenge_id:string} */
     public function start(SessionIdentity $identity, MainlandMobileNumber $newPhone, string $ip, int $now): array
     {
-        $account = $this->repository->account($identity->accountId);
-        $this->requireSession($identity, $account['sessionEpoch'] ?? null);
-        $oldPhone = MainlandMobileNumber::fromInput($account['phone']);
-        $this->requireAvailable($oldPhone, $newPhone);
-        $flow = new PhoneChangeFlow(
-            bin2hex(random_bytes(16)), $identity->accountId, $oldPhone, $account['phoneEpoch'], $newPhone,
-            PhoneChangeFlow::NORMAL, null, null, $identity->accountId,
-        );
-        $challenge = $this->requireChallenge($flow, false, $this->issue($flow, false, $ip, $now), $now);
-        $this->repository->create($flow, $now);
+        [$flow, $challenge] = $this->sessions->withCurrentIdentity($identity, $now, function () use ($identity, $newPhone, $ip, $now): array {
+            $account = $this->repository->account($identity->accountId);
+            if ($account === null) {
+                throw BusinessException::tokenInvalid();
+            }
+            $oldPhone = MainlandMobileNumber::fromInput($account['phone']);
+            $this->requireAvailable($oldPhone, $newPhone);
+            $flow = new PhoneChangeFlow(
+                bin2hex(random_bytes(16)), $identity->accountId, $oldPhone, $account['phoneEpoch'], $newPhone,
+                PhoneChangeFlow::NORMAL, null, null, $identity->accountId,
+            );
+            $challenge = $this->issue($flow, false, $ip, $now);
+            if ($challenge !== null) {
+                $this->repository->create($flow, $now);
+            }
+
+            return [$flow, $challenge];
+        });
+        $challenge = $this->requireChallenge($flow, false, $challenge, $now);
 
         return ['flow_id' => $flow->id, 'challenge_id' => $this->deliver($flow, false, $challenge, $now)];
     }
@@ -87,16 +98,27 @@ final class PhoneChangeService
      * @param SessionIdentity|Closure(PhoneChangeFlow):void $authorization See sendNew() for the recovery contract.
      *     The authorizer may be called again after a deadlock and must not consume external credentials.
      * @param Closure():int $clock
+     * @param (Closure(int):void)|null $recheckAuthorization Recheck a recovery session without acquiring SQL locks.
      */
-    public function complete(string $id, SessionIdentity|Closure $authorization, Closure $clock): void
-    {
-        $this->withAuthorizedFlow($id, $authorization, function (PhoneChangeFlow $flow) use ($clock): void {
-            $now = $clock();
+    public function complete(
+        string $id,
+        SessionIdentity|Closure $authorization,
+        Closure $clock,
+        ?Closure $recheckAuthorization = null,
+    ): void {
+        $this->withAuthorizedFlow($id, $authorization, $clock, function (PhoneChangeFlow $flow, int $now) use (
+            $authorization, $clock, $recheckAuthorization,
+        ): void {
             $flow->requireSourceProof($now);
             $flow->requireNewProof($now);
             $this->requireAvailable($flow->oldPhone, $flow->newPhone, lock: true);
-            // The destination lock can block behind a concurrent change. Recheck deadlines after it is acquired.
+            // The destination lock can block behind a concurrent change.
             $now = $clock();
+            if ($authorization instanceof SessionIdentity) {
+                $this->sessions->requireLiveIdentity($authorization, $now);
+            } elseif ($recheckAuthorization !== null) {
+                $recheckAuthorization($now);
+            }
             $flow->requireSourceProof($now);
             $flow->requireNewProof($now);
             $this->repository->commitChange($flow, $now);
@@ -105,10 +127,9 @@ final class PhoneChangeService
 
     private function send(string $id, SessionIdentity|Closure $authorization, bool $new, string $ip, Closure $clock): string
     {
-        [$flow, $challenge, $now] = $this->withAuthorizedFlow($id, $authorization, function (PhoneChangeFlow $flow) use (
-            $new, $ip, $clock,
+        [$flow, $challenge, $now] = $this->withAuthorizedFlow($id, $authorization, $clock, function (PhoneChangeFlow $flow, int $now) use (
+            $new, $ip,
         ): array {
-            $now = $clock();
             if ($new) {
                 $flow->requireSourceProof($now);
                 $this->requireAvailable($flow->oldPhone, $flow->newPhone);
@@ -130,11 +151,10 @@ final class PhoneChangeService
         #[\SensitiveParameter] string $code,
         Closure $clock,
     ): int {
-        $result = $this->withAuthorizedFlow($id, $authorization, function (PhoneChangeFlow $flow) use (
-            $new, $challenge, $code, $clock,
+        $result = $this->withAuthorizedFlow($id, $authorization, $clock, function (PhoneChangeFlow $flow, int $now) use (
+            $new, $challenge, $code,
         ): int|BusinessException {
             $phone = $new ? $flow->newPhone : $flow->oldPhone;
-            $now = $clock();
             try {
                 $this->verification->verify($challenge, $phone->e164, self::PURPOSE, $flow->id, $flow->binding($new), $code, $now);
             } catch (BusinessException $exception) {
@@ -231,16 +251,21 @@ final class PhoneChangeService
         }
     }
 
+    /**
+     * @param Closure():int $clock
+     * @param Closure(PhoneChangeFlow, int):mixed $operation
+     */
     private function withAuthorizedFlow(
         string $id,
         SessionIdentity|Closure $authorization,
+        Closure $clock,
         Closure $operation,
         int $attempts = 1,
     ): mixed {
         $normal = $authorization instanceof SessionIdentity;
 
         return $this->repository->withFlow($id, $normal ? $authorization->accountId : null,
-            function (PhoneChangeFlow $flow, string $epoch) use ($authorization, $normal, $operation): mixed {
+            function (PhoneChangeFlow $flow, string $epoch) use ($authorization, $normal, $clock, $operation): mixed {
                 if ($normal !== ($flow->mode === PhoneChangeFlow::NORMAL)) {
                     throw BusinessException::notFound();
                 }
@@ -250,7 +275,12 @@ final class PhoneChangeService
                     $authorization($flow);
                 }
 
-                return $operation($flow);
+                $now = $clock();
+                if ($normal) {
+                    $this->sessions->requireLiveIdentity($authorization, $now);
+                }
+
+                return $operation($flow, $now);
             }, $attempts);
     }
 }

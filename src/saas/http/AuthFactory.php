@@ -69,9 +69,11 @@ final class AuthFactory
 
     public function platformAdminController(): PlatformAdminController
     {
-        $repository = new IlluminatePlatformAdminMutationRepository(Db::connection($this->databaseConnection));
+        $connection = Db::connection($this->databaseConnection);
+        $repository = new IlluminatePlatformAdminMutationRepository($connection);
+        $sessions = new SessionService($this->redisClient(), $this->prefix, $this->secret, $connection);
 
-        return new PlatformAdminController(new ManagePlatformAdminsService($repository));
+        return new PlatformAdminController(new ManagePlatformAdminsService($repository, $sessions, $this->clock));
     }
 
     public function operatorRecoveryService(): OperatorRecoveryService
@@ -81,11 +83,13 @@ final class AuthFactory
         }
         $connection = Db::connection($this->databaseConnection);
         $flows = new IlluminatePhoneChangeRepository($connection);
-        $verification = new RedisVerification($this->redisClient(), $this->prefix, $this->secret, $this->smsPolicy);
-        $changes = new PhoneChangeService($flows, $verification, $this->smsSender);
+        $redis = $this->redisClient();
+        $verification = new RedisVerification($redis, $this->prefix, $this->secret, $this->smsPolicy);
+        $sessions = new SessionService($redis, $this->prefix, $this->secret, $connection);
+        $changes = new PhoneChangeService($flows, $verification, $this->smsSender, $sessions);
 
         return new OperatorRecoveryService(new IlluminateOperatorRecoveryRepository($connection), $flows, $changes,
-            $this->operatorRecoveryVerifier);
+            $this->operatorRecoveryVerifier, $sessions);
     }
 
     public function operatorRecoveryController(): OperatorRecoveryController
@@ -95,18 +99,23 @@ final class AuthFactory
 
     public function phoneChangeController(): PhoneChangeController
     {
-        $repository = new IlluminatePhoneChangeRepository(Db::connection($this->databaseConnection));
-        $verification = new RedisVerification($this->redisClient(), $this->prefix, $this->secret, $this->smsPolicy);
-        $service = new PhoneChangeService($repository, $verification, $this->smsSender);
+        $connection = Db::connection($this->databaseConnection);
+        $redis = $this->redisClient();
+        $repository = new IlluminatePhoneChangeRepository($connection);
+        $verification = new RedisVerification($redis, $this->prefix, $this->secret, $this->smsPolicy);
+        $sessions = new SessionService($redis, $this->prefix, $this->secret, $connection);
+        $service = new PhoneChangeService($repository, $verification, $this->smsSender, $sessions);
 
         return new PhoneChangeController($service, $this->clock, $this->clientAddress);
     }
 
     public function profileController(): ProfileController
     {
-        $repository = new IlluminateProfileRepository(Db::connection($this->databaseConnection));
+        $connection = Db::connection($this->databaseConnection);
+        $repository = new IlluminateProfileRepository($connection);
+        $sessions = new SessionService($this->redisClient(), $this->prefix, $this->secret, $connection);
 
-        return new ProfileController(new ProfileService($repository));
+        return new ProfileController(new ProfileService($repository, $sessions), $this->clock);
     }
 
     public function emailChangeController(): EmailChangeController
@@ -122,6 +131,7 @@ final class AuthFactory
             new RedisVerification($redis, $this->prefix, $this->secret, $this->smsPolicy),
             $this->emailSender,
             $this->smsSender,
+            new SessionService($redis, $this->prefix, $this->secret, $connection),
         );
 
         return new EmailChangeController($service, $this->clock, $this->clientAddress);
@@ -136,7 +146,8 @@ final class AuthFactory
         $redis = $this->redisClient();
         $flows = new IlluminatePhoneChangeRepository($connection);
         $verification = new RedisVerification($redis, $this->prefix, $this->secret, $this->smsPolicy);
-        $phoneChanges = new PhoneChangeService($flows, $verification, $this->smsSender);
+        $sessions = new SessionService($redis, $this->prefix, $this->secret, $connection);
+        $phoneChanges = new PhoneChangeService($flows, $verification, $this->smsSender, $sessions);
         $service = new EmailRecoveryService(
             new IlluminateEmailRecoveryRepository($connection),
             $flows,

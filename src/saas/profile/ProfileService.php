@@ -4,12 +4,16 @@ declare(strict_types=1);
 
 namespace Z0x\WebmanStarter\saas\profile;
 
+use Z0x\WebmanStarter\saas\session\SessionIdentity;
+use Z0x\WebmanStarter\saas\session\SessionService;
 use Z0x\WebmanStarter\Support\Exception\BusinessException;
 
 final class ProfileService
 {
-    public function __construct(private readonly ProfileRepositoryInterface $profiles)
-    {
+    public function __construct(
+        private readonly ProfileRepositoryInterface $profiles,
+        private readonly SessionService $sessions,
+    ) {
     }
 
     /** @return array{account_id:int, display_name:?string, display_label:string} */
@@ -19,9 +23,12 @@ final class ProfileService
     }
 
     /** @return array{account_id:int, display_name:?string, display_label:string} */
-    public function update(int $accountId, mixed $displayName): array
+    public function update(SessionIdentity $identity, mixed $displayName, int $now): array
     {
-        return $this->withDisplayLabel($this->profiles->update($accountId, $this->normalizeName($displayName)));
+        $name = $this->normalizeName($displayName);
+
+        return $this->sessions->withCurrentIdentity($identity, $now, fn (): array =>
+            $this->withDisplayLabel($this->profiles->update($identity->accountId, $name)));
     }
 
     /**

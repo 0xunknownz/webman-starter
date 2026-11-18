@@ -20,25 +20,31 @@ final class EmailSignInService
     ) {
     }
 
-    public function send(int $accountId, EmailAddress $email, string $ip, int $now): string
+    public function send(SessionIdentity $identity, EmailAddress $email, string $ip, int $now): string
     {
-        $account = $this->repository->account($accountId);
-        if ($account === null) {
-            throw BusinessException::tokenInvalid();
-        }
-        if ($account['email'] !== null) {
-            throw BusinessException::forbidden();
-        }
-        if ($this->repository->emailOwner($email) !== null) {
-            throw new BusinessException('邮箱已被其他账号使用', 'email_already_used', 409);
-        }
-
+        $accountId = $identity->accountId;
         $purpose = EmailVerification::BIND;
-        if (!$this->verification->reserve($email->value, $ip, $purpose, $now)) {
+        $challenge = $this->sessions->withCurrentIdentity($identity, $now, function () use ($accountId, $email, $ip, $purpose, $now): ?array {
+            $account = $this->repository->account($accountId);
+            if ($account === null) {
+                throw BusinessException::tokenInvalid();
+            }
+            if ($account['email'] !== null) {
+                throw BusinessException::forbidden();
+            }
+            if ($this->repository->emailOwner($email) !== null) {
+                throw new BusinessException('邮箱已被其他账号使用', 'email_already_used', 409);
+            }
+            if (!$this->verification->reserve($email->value, $ip, $purpose, $now)) {
+                return null;
+            }
+
+            return $this->verification->issue($email->value, $purpose, (string) $accountId, (string) $account['email_epoch'], $now);
+        });
+        if ($challenge === null) {
             $this->auditAttempt('email_rate_limited', $accountId, $now);
             throw new BusinessException('邮件请求过于频繁', 'email_rate_limited', 429);
         }
-        $challenge = $this->verification->issue($email->value, $purpose, (string) $accountId, (string) $account['email_epoch'], $now);
         $status = $this->sender->send($email->value, $challenge['code'], $purpose);
         if ($challenge['replaced']) {
             $this->auditAttempt('email_challenge_reissued', $accountId, $now);

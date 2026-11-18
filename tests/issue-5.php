@@ -96,4 +96,55 @@ function testProfile(Fixtures $fixtures, SmsLoginFixture $smsLogin): void
         expectProfile(smsRequest($port, 'GET', ACCOUNT_PROFILE, headers: $platform), $platformId, null, 'Platform name stayed cleared');
     }, ['WEBMAN_STARTER_HTTP_WORKERS' => '1']);
     echo "PASS profile validation, nullable names, and account isolation on one Webman HTTP worker\n";
+    testProfileWriteAfterConcurrentLogout($fixtures, $smsLogin, $db, $memberId);
+}
+
+function testProfileWriteAfterConcurrentLogout(Fixtures $fixtures, SmsLoginFixture $smsLogin, \PDO $db, int $memberId): void
+{
+    $smsLogin->withHost('profile-logout-race', static function (int $port) use ($fixtures, $smsLogin, $db, $memberId): void {
+        $smsLogin->clock(SMS_TIME);
+        $token = smsToken(smsLogin($port, $smsLogin->issue($port, PROFILE_MEMBER),
+            phone: PROFILE_MEMBER, purpose: 'organization'));
+        $client = null;
+        $db->beginTransaction();
+        try {
+            $lock = $db->prepare('SELECT id FROM starter_accounts WHERE id = ? FOR UPDATE');
+            $lock->execute([$memberId]);
+            $lock->closeCursor();
+            clearstatcache(true, $fixtures->sqlLog);
+            $offset = filesize($fixtures->sqlLog);
+            check($offset !== false, 'Could not locate the profile write in the MySQL query log');
+            $client = smsConnect($port, 'PATCH', ACCOUNT_PROFILE, ['display_name' => 'Deferred name'], sessionBearer($token));
+
+            // The PATCH has passed its HTTP authorization when it reaches this write transaction.
+            $deadline = microtime(true) + 2;
+            do {
+                $log = file_get_contents($fixtures->sqlLog, false, null, $offset);
+                check($log !== false, 'Could not read the profile write in the MySQL query log');
+                if (preg_match('/from \x60starter_accounts\x60[^\r\n]*for update/i', $log) === 1) {
+                    break;
+                }
+                check(microtime(true) < $deadline, 'Profile write did not reach the held account lock');
+                usleep(1_000);
+            } while (true);
+
+            sessionLogout($port, $token);
+            $db->rollBack();
+            smsExpect(smsReadResponse($client), 401, 'token_invalid', 'Profile write suspended until after logout');
+        } finally {
+            if ($db->inTransaction()) {
+                $db->rollBack();
+            }
+            if (is_resource($client)) {
+                fclose($client);
+            }
+        }
+
+        $smsLogin->clock(SMS_TIME + 60);
+        $freshToken = smsToken(smsLogin($port, $smsLogin->issue($port, PROFILE_MEMBER),
+            phone: PROFILE_MEMBER, purpose: 'organization'));
+        expectProfile(smsRequest($port, 'GET', ACCOUNT_PROFILE, headers: sessionBearer($freshToken)),
+            $memberId, null, 'Revoked update did not change the stored name');
+    });
+    echo "PASS two Webman workers reject an authenticated profile write waiting for its account lock after logout\n";
 }

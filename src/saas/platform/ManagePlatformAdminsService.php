@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Z0x\WebmanStarter\saas\platform;
 
+use Closure;
 use Z0x\WebmanStarter\saas\domain\MainlandMobileNumber;
 use Z0x\WebmanStarter\saas\session\SessionIdentity;
 use Z0x\WebmanStarter\saas\session\SessionService;
@@ -11,8 +12,12 @@ use Z0x\WebmanStarter\Support\Exception\BusinessException;
 
 final class ManagePlatformAdminsService
 {
-    public function __construct(private readonly PlatformAdminMutationRepositoryInterface $repository)
-    {
+    /** @param Closure():int $clock */
+    public function __construct(
+        private readonly PlatformAdminMutationRepositoryInterface $repository,
+        private readonly SessionService $sessions,
+        private readonly Closure $clock,
+    ) {
     }
 
     public function grant(SessionIdentity $identity, string $phone): int
@@ -27,6 +32,7 @@ final class ManagePlatformAdminsService
             $targetId = $accounts['target_id'];
             $admins = $this->repository->lockAdministrators($actorId, $targetId);
             $this->requireCurrentActor($identity, $accounts['actor_epoch'], $admins[$actorId] ?? null);
+            $this->sessions->requireLiveIdentity($identity, ($this->clock)());
 
             if (($admins[$targetId]['status'] ?? null) === 'active') {
                 throw new BusinessException('The account is already a platform administrator.', 'platform_admin_already_granted', 409);
@@ -53,11 +59,14 @@ final class ManagePlatformAdminsService
             $actorEpoch = $this->repository->lockAccountEpoch($actorId, $accountId);
             $admins = $this->repository->lockAdministrators($actorId, $accountId);
             $this->requireCurrentActor($identity, $actorEpoch, $admins[$actorId] ?? null);
+            $this->sessions->requireLiveIdentity($identity, ($this->clock)());
 
             if (($admins[$accountId]['status'] ?? null) !== 'active') {
                 throw BusinessException::notFound('Active platform administrator not found.');
             }
-            if (!$this->repository->hasOtherActiveAdministrator($accountId)) {
+            $hasOtherActiveAdministrator = $this->repository->hasOtherActiveAdministrator($accountId);
+            $this->sessions->requireLiveIdentity($identity, ($this->clock)());
+            if (!$hasOtherActiveAdministrator) {
                 $this->repository->appendAudit('platform_admin_revoke_denied', $actorId, $accountId, [
                     'source' => 'api',
                     'result' => 'denied',

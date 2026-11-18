@@ -21,6 +21,7 @@ final class OperatorRecoveryService
         private readonly PhoneChangeRepositoryInterface $flows,
         private readonly PhoneChangeService $changes,
         private readonly OperatorRecoveryEvidenceVerifierInterface $verifier,
+        private readonly SessionService $sessions,
     ) {
     }
 
@@ -69,7 +70,10 @@ final class OperatorRecoveryService
     /** @param Closure():int $clock */
     public function complete(string $id, SessionIdentity|string $operator, Closure $clock): void
     {
-        $this->changes->complete($id, $this->authorize($operator, $clock), $clock);
+        $recheckAuthorization = $operator instanceof SessionIdentity ? function (int $now) use ($operator): void {
+            $this->sessions->requireLiveIdentity($operator, $now);
+        } : null;
+        $this->changes->complete($id, $this->authorize($operator, $clock), $clock, $recheckAuthorization);
     }
 
     /** @param Closure():int $clock */
@@ -107,6 +111,9 @@ final class OperatorRecoveryService
                     : new BusinessException('恢复对象已变更，请重新核验', 'recovery_target_changed', 409);
             }
             $now = $clock();
+            if ($operator instanceof SessionIdentity) {
+                $this->sessions->requireLiveIdentity($operator, $now);
+            }
             $flow = new PhoneChangeFlow(
                 bin2hex(random_bytes(16)), $current['id'], MainlandMobileNumber::fromInput($current['phone']),
                 $current['phoneEpoch'], $newPhone, self::mode($operator), $now + PhoneChangeFlow::PROOF_TTL,
@@ -132,7 +139,11 @@ final class OperatorRecoveryService
                 throw self::unverifiedEvidence($operator);
             }
             $this->eligibleTarget($operator, $flow->accountId);
-            $flow->requireSourceProof($clock());
+            $now = $clock();
+            if ($operator instanceof SessionIdentity) {
+                $this->sessions->requireLiveIdentity($operator, $now);
+            }
+            $flow->requireSourceProof($now);
         };
     }
 

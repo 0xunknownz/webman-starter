@@ -28,7 +28,7 @@ final class EmailController
     {
         $identity = $this->auth->identity($request);
         $email = EmailAddress::fromInput($request->post('email'));
-        $id = $this->email->send($identity->accountId, $email, $this->clientAddress->resolve($request), ($this->clock)());
+        $id = $this->email->send($identity, $email, $this->clientAddress->resolve($request), ($this->clock)());
 
         return ApiResponse::success(['accepted' => true, 'challenge_id' => $id], '邮件请求已受理', request: $request)
             ->header('Cache-Control', 'no-store');
