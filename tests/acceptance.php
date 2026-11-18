@@ -352,6 +352,11 @@ try {
     testSessions($fixtures, $smsLogin);
     testProfile($fixtures, $smsLogin);
     testEmailSignIn($fixtures, $smsLogin);
+    $fixtures->database('qa_credentialwrites');
+    migrate($fixtures);
+    cliResult(init($fixtures, PHONE)->result(), true, 'platform_admin_initialized');
+    echo $fixtures->run([PHP_BINARY, __DIR__ . '/credential-write-concurrency.php'],
+        'Credential write concurrency', $fixtures->host);
     testPlatformAdmins($fixtures, $smsLogin);
     testPasswordReset($fixtures, $smsLogin);
     testPhoneRebind($fixtures, $smsLogin);
