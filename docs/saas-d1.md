@@ -84,7 +84,7 @@ POST `/auth/password/reset/send` 接收 `email`，返回统一受理响应及 `c
 
 ## 平台资格管理
 
-平台管理员使用平台用途 Bearer 令牌调用 POST `/platform/admins`，提交 JSON `phone`。成功时返回目标 `account_id`。操作按中国大陆移动号码规则创建或复用账号。DELETE `/platform/admins/{accountId}` 撤销指定账号的平台资格，立即使该账号的平台访问令牌和刷新令牌失效，组织用途会话继续有效。最后一位管理员的撤权请求返回 `last_platform_admin_required`。
+平台管理员使用平台用途 Bearer 令牌调用 POST `/platform/admins`，提交 JSON `phone`。成功时返回目标 `account_id`。操作按中国大陆移动号码规则创建或复用账号。新建账号返回 HTTP 201，复用已有账号返回 HTTP 200。DELETE `/platform/admins/{accountId}` 撤销指定账号的平台资格，立即使该账号的平台访问令牌和刷新令牌失效，组织用途会话继续有效。最后一位管理员的撤权请求返回 `last_platform_admin_required`。
 
 平台资格授予、撤销与最后一位保护的审计写入 `starter_audit_logs`。
 
@@ -100,7 +100,7 @@ POST `/auth/password/reset/send` 接收 `email`，返回统一受理响应及 `c
 | `/new/verify` | 提交新号的 `challenge_id` 和 `code`。 |
 | `/complete` | 同时检查两项验证结果并提交换绑。 |
 
-验证码默认 5 分钟过期，两项验证结果分别从各自验证成功起有效 10 分钟。换绑成功后旧会话立即失效，旧号待接受的邀请与席位预留在同一事务处理。用户可使用新号码或已启用的邮箱密码重新登录。
+验证码默认 5 分钟过期，两项验证结果分别从各自验证成功起有效 10 分钟。同一流程同一步骤的短信重发会记录脱敏号码与供应商提交结果，即使上一验证码已经过期或消费。换绑成功后旧会话立即失效，旧号待接受的邀请与席位预留在同一事务处理。用户可使用新号码或已启用的邮箱密码重新登录。
 
 ## 使用已验证邮箱恢复手机号
 
@@ -112,7 +112,7 @@ POST `/auth/password/reset/send` 接收 `email`，返回统一受理响应及 `c
 
 产品需要在 Webman 的 starter 配置中注入实现 `OperatorRecoveryEvidenceVerifierInterface` 的核验器。核验器依据已保存的归属资料检查工单引用、目标账号和新号码，并确认通过预登记联系人或已授权渠道完成核验。只有核验成功才可开始流程，核验器缺失或资料无法查证时返回 `forbidden`。
 
-平台管理员用平台用途 Bearer 令牌向 POST `/platform/phone-recovery` 提交 `account_id`、`new_phone`、`reason` 和 `evidence` 对象。`reason` 可取 `lost_phone`、`number_unavailable` 或 `compromised_phone`，`evidence` 包含 `channel` 和 `reference`。渠道可取 `registered_contact` 或 `authorized_channel`。引用使用产品的工单标识。拿到 `flow_id` 后，在 `/platform/phone-recovery/{flow}` 下依次 POST `/new/send`、`/new/verify` 和 `/complete`。新号码的验证码随 `challenge_id` 传给验证入口。
+平台管理员用平台用途 Bearer 令牌向 POST `/platform/phone-recovery` 提交 `account_id`、`new_phone`、`reason` 和 `evidence` 对象。`reason` 可取 `lost_phone`、`number_unavailable` 或 `compromised_phone`，`evidence` 包含 `channel` 和 `reference`。渠道可取 `registered_contact` 或 `authorized_channel`。引用使用产品的工单标识。创建恢复流程成功时返回 HTTP 201 和 `flow_id`。拿到 `flow_id` 后，在 `/platform/phone-recovery/{flow}` 下依次 POST `/new/send`、`/new/verify` 和 `/complete`。新号码的验证码随 `challenge_id` 传给验证入口。
 
 唯一有效平台管理员无已验证邮箱时，执行服务器端离线恢复。受控运维账号在宿主项目根目录运行以下命令。部署配置需启用 `STARTER_OPERATOR_RECOVERY_CLI_ENABLED`，设置核验器并配置换绑短信模板和供应商。
 
@@ -138,4 +138,4 @@ D1 完整验收在 PHP 8.1.34、MySQL 8.0.46、Redis 8.6.2 上通过，分别使
 
 ## 升级
 
-升级前按部署流程备份目标库并核对版本。更新 Composer 包后显式检查和应用待执行迁移，再重启 Webman 载入新依赖。普通 PHP 代码变更可使用宿主项目的 reload 流程。Composer 安装、更新和移除会保留数据库结构与数据，DDL 通过显式迁移入口执行。
+升级前按部署流程备份目标库并核对版本。更新 Composer 包后显式检查和应用待执行迁移，再重启 Webman 载入新依赖。普通 PHP 代码变更可使用宿主项目的 reload 流程。Composer 安装、更新和移除会保留数据库结构与数据，DDL 通过显式迁移入口执行。直接构造 `SessionService` 的宿主需要注入 `RedisSessionStore` 和 `IlluminateSessionAccountRepository`，通过 `AuthFactory` 接入的宿主由工厂组装。

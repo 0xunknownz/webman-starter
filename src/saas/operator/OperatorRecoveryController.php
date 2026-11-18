@@ -36,7 +36,7 @@ final class OperatorRecoveryController
             $this->clock,
         );
 
-        return self::response($request, ['flow_id' => $flow]);
+        return ApiResponse::created(['flow_id' => $flow], request: $request)->header('Cache-Control', 'no-store');
     }
 
     public function sendNew(Request $request, string $flow): Response

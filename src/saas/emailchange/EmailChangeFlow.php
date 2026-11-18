@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Z0x\WebmanStarter\saas\emailchange;
 
+use Z0x\WebmanStarter\saas\domain\VerificationProof;
 use Z0x\WebmanStarter\saas\email\EmailAddress;
-use Z0x\WebmanStarter\Support\Exception\BusinessException;
 
 final class EmailChangeFlow
 {
-    public const PROOF_TTL = 600;
+    public const PROOF_TTL = VerificationProof::TTL;
 
     public function __construct(
         public readonly string $id,
@@ -35,18 +35,11 @@ final class EmailChangeFlow
 
     public function requireSourceProof(int $now): void
     {
-        self::requireProof($this->sourceVerifiedUntil, $now);
+        VerificationProof::requireCurrent($this->sourceVerifiedUntil, $now);
     }
 
     public function requireNewProof(int $now): void
     {
-        self::requireProof($this->newVerifiedUntil, $now);
-    }
-
-    private static function requireProof(?int $deadline, int $now): void
-    {
-        if ($deadline === null || $deadline <= $now) {
-            throw new BusinessException('验证凭据已过期或尚未取得', 'credential_expired', 401);
-        }
+        VerificationProof::requireCurrent($this->newVerifiedUntil, $now);
     }
 }

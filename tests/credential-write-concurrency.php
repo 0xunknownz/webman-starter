@@ -25,6 +25,7 @@ use Z0x\WebmanStarter\saas\rebind\IlluminatePhoneChangeRepository;
 use Z0x\WebmanStarter\saas\rebind\PhoneChangeFlow;
 use Z0x\WebmanStarter\saas\reset\IlluminatePasswordResetRepository;
 use Z0x\WebmanStarter\saas\session\IlluminateSessionAccountRepository;
+use Z0x\WebmanStarter\saas\session\RedisSessionStore;
 use Z0x\WebmanStarter\saas\session\SessionIdentity;
 use Z0x\WebmanStarter\saas\session\SessionService;
 use Z0x\WebmanStarter\saas\verification\RatePolicy;
@@ -81,7 +82,7 @@ check($redis->connect('127.0.0.1', (int) getenv('STARTER_REDIS_PORT'), 1)
 
 $secret = bin2hex(random_bytes(32));
 $prefix = 'qa01:credential-writes';
-$sessions = new SessionService($redis, $prefix, $secret, $requestDb);
+$sessions = new SessionService(new RedisSessionStore($redis), $prefix, $secret, new IlluminateSessionAccountRepository($requestDb));
 $verification = new EmailVerification($redis, $prefix, $secret, RatePolicy::email());
 $accounts = new IlluminateEmailAccountRepository($requestDb);
 $email = new EmailSignInService($accounts, $verification, new class implements EmailSenderInterface {

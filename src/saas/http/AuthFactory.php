@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Z0x\WebmanStarter\saas\http;
 
 use Closure;
+use Illuminate\Database\ConnectionInterface;
 use InvalidArgumentException;
 use Redis;
 use support\Db;
@@ -41,6 +42,8 @@ use Z0x\WebmanStarter\saas\reset\IlluminatePasswordResetRepository;
 use Z0x\WebmanStarter\saas\reset\PasswordResetController;
 use Z0x\WebmanStarter\saas\reset\PasswordResetService;
 use Z0x\WebmanStarter\saas\service\SmsLoginService;
+use Z0x\WebmanStarter\saas\session\IlluminateSessionAccountRepository;
+use Z0x\WebmanStarter\saas\session\RedisSessionStore;
 use Z0x\WebmanStarter\saas\session\SessionService;
 use Z0x\WebmanStarter\saas\verification\RatePolicy;
 use Z0x\WebmanStarter\saas\verification\RedisVerification;
@@ -71,7 +74,7 @@ final class AuthFactory
     {
         $connection = Db::connection($this->databaseConnection);
         $repository = new IlluminatePlatformAdminMutationRepository($connection);
-        $sessions = new SessionService($this->redisClient(), $this->prefix, $this->secret, $connection);
+        $sessions = $this->sessions($connection, $this->redisClient());
 
         return new PlatformAdminController(new ManagePlatformAdminsService($repository, $sessions, $this->clock));
     }
@@ -85,7 +88,7 @@ final class AuthFactory
         $flows = new IlluminatePhoneChangeRepository($connection);
         $redis = $this->redisClient();
         $verification = new RedisVerification($redis, $this->prefix, $this->secret, $this->smsPolicy);
-        $sessions = new SessionService($redis, $this->prefix, $this->secret, $connection);
+        $sessions = $this->sessions($connection, $redis);
         $changes = new PhoneChangeService($flows, $verification, $this->smsSender, $sessions);
 
         return new OperatorRecoveryService(new IlluminateOperatorRecoveryRepository($connection), $flows, $changes,
@@ -103,7 +106,7 @@ final class AuthFactory
         $redis = $this->redisClient();
         $repository = new IlluminatePhoneChangeRepository($connection);
         $verification = new RedisVerification($redis, $this->prefix, $this->secret, $this->smsPolicy);
-        $sessions = new SessionService($redis, $this->prefix, $this->secret, $connection);
+        $sessions = $this->sessions($connection, $redis);
         $service = new PhoneChangeService($repository, $verification, $this->smsSender, $sessions);
 
         return new PhoneChangeController($service, $this->clock, $this->clientAddress);
@@ -113,7 +116,7 @@ final class AuthFactory
     {
         $connection = Db::connection($this->databaseConnection);
         $repository = new IlluminateProfileRepository($connection);
-        $sessions = new SessionService($this->redisClient(), $this->prefix, $this->secret, $connection);
+        $sessions = $this->sessions($connection, $this->redisClient());
 
         return new ProfileController(new ProfileService($repository, $sessions), $this->clock);
     }
@@ -131,7 +134,7 @@ final class AuthFactory
             new RedisVerification($redis, $this->prefix, $this->secret, $this->smsPolicy),
             $this->emailSender,
             $this->smsSender,
-            new SessionService($redis, $this->prefix, $this->secret, $connection),
+            $this->sessions($connection, $redis),
         );
 
         return new EmailChangeController($service, $this->clock, $this->clientAddress);
@@ -146,7 +149,7 @@ final class AuthFactory
         $redis = $this->redisClient();
         $flows = new IlluminatePhoneChangeRepository($connection);
         $verification = new RedisVerification($redis, $this->prefix, $this->secret, $this->smsPolicy);
-        $sessions = new SessionService($redis, $this->prefix, $this->secret, $connection);
+        $sessions = $this->sessions($connection, $redis);
         $phoneChanges = new PhoneChangeService($flows, $verification, $this->smsSender, $sessions);
         $service = new EmailRecoveryService(
             new IlluminateEmailRecoveryRepository($connection),
@@ -178,7 +181,7 @@ final class AuthFactory
         }
         $connection = Db::connection($this->databaseConnection);
         $redis = $this->redisClient();
-        $sessions = new SessionService($redis, $this->prefix, $this->secret, $connection);
+        $sessions = $this->sessions($connection, $redis);
         $service = new EmailSignInService(
             new IlluminateEmailAccountRepository($connection),
             new EmailVerification($redis, $this->prefix, $this->secret, $this->emailPolicy),
@@ -195,7 +198,7 @@ final class AuthFactory
         $connection = Db::connection($this->databaseConnection);
         $redis = $this->redisClient();
         $verification = new RedisVerification($redis, $this->prefix, $this->secret, $this->smsPolicy);
-        $sessions = new SessionService($redis, $this->prefix, $this->secret, $connection);
+        $sessions = $this->sessions($connection, $redis);
         $repository = new IlluminateSmsLoginRepository($connection, new IlluminatePlatformAdminRepository($connection));
 
         return new AuthController(
@@ -203,6 +206,16 @@ final class AuthFactory
             $sessions,
             $this->clock,
             $this->clientAddress,
+        );
+    }
+
+    private function sessions(ConnectionInterface $connection, Redis $redis): SessionService
+    {
+        return new SessionService(
+            new RedisSessionStore($redis),
+            $this->prefix,
+            $this->secret,
+            new IlluminateSessionAccountRepository($connection),
         );
     }
 

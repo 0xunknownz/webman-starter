@@ -24,8 +24,13 @@ final class PlatformAdminController
             throw BusinessException::validation(['phone' => ['参数格式无效']]);
         }
 
-        return ApiResponse::success(['account_id' => $this->service->grant($identity, $phone)], request: $request)
-            ->header('Cache-Control', 'no-store');
+        $outcome = $this->service->grantWithOutcome($identity, $phone);
+        $data = ['account_id' => $outcome['account_id']];
+        $response = $outcome['account_created']
+            ? ApiResponse::created($data, request: $request)
+            : ApiResponse::success($data, request: $request);
+
+        return $response->header('Cache-Control', 'no-store');
     }
 
     public function revoke(Request $request, string $accountId): Response
