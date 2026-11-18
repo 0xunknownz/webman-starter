@@ -19,6 +19,7 @@ require __DIR__ . '/issue-9.php';
 require __DIR__ . '/issue-10.php';
 require __DIR__ . '/issue-11.php';
 require __DIR__ . '/issue-12.php';
+require __DIR__ . '/mutation-logout-concurrency.php';
 
 const PACKAGE = 'z0x/webman-starter';
 const PHONE = '13800138000';
@@ -362,6 +363,7 @@ try {
     testPhoneRebind($fixtures, $smsLogin);
     testEmailRecovery($fixtures, $smsLogin);
     testOperatorRecovery($fixtures, $smsLogin);
+    testMutationsAfterConcurrentLogout($fixtures, $smsLogin);
     testEmailChange($fixtures, $smsLogin);
 
     $lifecycleDb = $fixtures->database('qa_lifecycle', create: false);
