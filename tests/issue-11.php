@@ -235,6 +235,9 @@ function testOfflineOperatorRecovery(Fixtures $fixtures, SmsLoginFixture $qa, st
         check($db->query("SELECT phone FROM starter_accounts WHERE id = $account")->fetchColumn() === '+86' . PHONE,
             'A wrong CLI SMS code changed the account');
 
+        testOfflineRecoveryTightenedAttempts($fixtures, $qa, $db, $start);
+        sessionPlatform($port, $target['access_token']);
+
         $qa->clock(SMS_TIME + 60);
         $ineligible = $start(pipe: true);
         $sentCode = awaitOfflineRecoverySms($fixtures, $qa, $ineligible);
@@ -282,6 +285,47 @@ function testOfflineOperatorRecovery(Fixtures $fixtures, SmsLoginFixture $qa, st
         assertOperatorRecoveryAudit($db, $account, $actor, 'offline_recovery', 'authorized_channel', PHONE);
     }, $env);
     echo "PASS offline recovery enforces CLI opt-in and current sole-admin eligibility through real SMS input and audit\n";
+}
+
+/** @param callable(array<string,string>, string, bool): Process $start */
+function testOfflineRecoveryTightenedAttempts(Fixtures $fixtures, SmsLoginFixture $qa, PDO $db, callable $start): void
+{
+    // The CLI reads one code per invocation. Seed earlier failures on each live challenge before writing stdin.
+    foreach ([1 => 'verification_attempts_exceeded', 2 => 'credential_expired'] as $priorFailures => $expected) {
+        $prefix = 'qa01:offline-attempts-' . $priorFailures;
+        $cli = $start(['STARTER_SMS_ATTEMPTS' => '2', 'STARTER_REDIS_PREFIX' => $prefix], pipe: true);
+        try {
+            $code = awaitOfflineRecoverySms($fixtures, $qa, $cli);
+            $seed = $fixtures->start([PHP_BINARY, '-r', <<<'PHP'
+                $redis = new Redis();
+                if (!$redis->connect(getenv('STARTER_REDIS_HOST'), (int) getenv('STARTER_REDIS_PORT'))
+                    || !$redis->auth(getenv('STARTER_REDIS_PASSWORD'))) {
+                    fwrite(STDERR, "Could not connect to the isolated Redis fixture\n");
+                    exit(1);
+                }
+                $keys = $redis->keys($argv[1] . ':verification:v1:otp-id:*');
+                if (count($keys) !== 1 || $redis->hGet($keys[0], 'failures') !== '0'
+                    || $redis->hGet($keys[0], 'maxAttempts') !== '2'
+                    || $redis->hSet($keys[0], 'failures', $argv[2]) !== 0) {
+                    fwrite(STDERR, "Expected one fresh offline challenge with a two-attempt limit\n");
+                    exit(1);
+                }
+                PHP, $prefix, (string) $priorFailures], $fixtures->host);
+            [$exit, $output] = $seed->result();
+            check($exit === 0, "Could not prepare offline recovery attempt budget: $output");
+
+            $before = snapshot($db);
+            $cli->writeInput(($priorFailures === 1 ? wrongSmsCode($code) : $code) . "\n");
+            cliResult($cli->result(), false, $expected);
+            $after = snapshot($db);
+            // Verification failures can append audit events. Recovery state must stay intact.
+            unset($before['starter_audit_logs'], $after['starter_audit_logs']);
+            check($after === $before, "Offline recovery changed persisted state after $expected");
+        } finally {
+            $cli->stop();
+        }
+    }
+    echo "PASS AC-09 offline recovery honors the two-attempt SMS limit and preserves persisted state\n";
 }
 
 function awaitOfflineRecoverySms(Fixtures $fixtures, SmsLoginFixture $qa, Process $process): string
