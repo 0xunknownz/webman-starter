@@ -1,0 +1,113 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+use Illuminate\Database\Capsule\Manager;
+use Z0x\WebmanStarter\saas\domain\MainlandMobileNumber;
+use Z0x\WebmanStarter\saas\http\AuthFactory;
+use Z0x\WebmanStarter\saas\infrastructure\IlluminatePlatformAdminRepository;
+use Z0x\WebmanStarter\saas\infrastructure\StarterDatabaseConfig;
+use Z0x\WebmanStarter\saas\operator\OperatorRecoveryEvidence;
+use Z0x\WebmanStarter\saas\operator\OperatorRecoveryEvidenceVerifierInterface;
+use Z0x\WebmanStarter\saas\service\InitializePlatformAdminService;
+use Z0x\WebmanStarter\Support\Exception\BusinessException;
+
+function executionIdentity(): string
+{
+    if (function_exists('posix_geteuid')) {
+        return 'uid:' . posix_geteuid();
+    }
+
+    $actor = getenv('STARTER_CLI_ACTOR');
+    if ($actor === false || preg_match('/\A[A-Za-z0-9_.-]{1,64}\z/', $actor) !== 1) {
+        throw new BusinessException('An operator identity is required for audit.', 'audit_unavailable', 503);
+    }
+
+    return 'deployment:' . $actor;
+}
+
+/** @param list<string> $argv */
+function recoverPlatformAdministrator(array $argv, MainlandMobileNumber $phone, string $actorReference): void
+{
+    $bootstrap = getcwd() . '/support/bootstrap.php';
+    if (!is_file($bootstrap)) {
+        throw new BusinessException('Run recovery from the Webman host root.', 'offline_recovery_disabled', 403);
+    }
+    require $bootstrap;
+    $settings = config('starter', []);
+    if (($settings['operator_recovery_cli_enabled'] ?? null) !== true
+        || !(($settings['operator_recovery_verifier'] ?? null) instanceof OperatorRecoveryEvidenceVerifierInterface)) {
+        throw new BusinessException('Offline recovery requires host approval and a case verifier.', 'offline_recovery_disabled', 403);
+    }
+
+    $evidence = OperatorRecoveryEvidence::fromInput(['channel' => $argv[4], 'reference' => $argv[5]], $argv[3]);
+    $clock = $settings['clock'];
+    $auth = new AuthFactory(
+        $settings['prefix'],
+        $settings['secret'],
+        $settings['sms_policy'],
+        $settings['sms_sender'],
+        $clock,
+        $settings['client_address'],
+        databaseConnection: $settings['database_connection'] ?? 'mysql',
+        redisConnection: $settings['redis_connection'] ?? 'starter_auth',
+        operatorRecoveryVerifier: $settings['operator_recovery_verifier'],
+    );
+    $service = $auth->operatorRecoveryService();
+    $flow = $service->startOffline($actorReference, $phone, $evidence, $clock);
+    $challenge = $service->sendNew($flow, $actorReference, '127.0.0.1', $clock);
+    fwrite(STDOUT, 'Enter the six-digit SMS code on stdin.' . PHP_EOL);
+    fflush(STDOUT);
+    $line = fgets(STDIN, 32);
+    if ($line === false || preg_match('/\A[0-9]{6}\z/', $code = rtrim($line, "\r\n")) !== 1) {
+        throw BusinessException::validation(['code' => ['请输入六位短信验证码']]);
+    }
+
+    $service->verifyNew($flow, $actorReference, $challenge, $code, $clock);
+    $service->complete($flow, $actorReference, $clock);
+}
+
+$command = $argv[1] ?? null;
+if (!(($command === 'platform:init' && $argc === 3) || ($command === 'platform:recover' && $argc === 6))) {
+    fwrite(STDERR, 'Usage: php vendor/bin/webman-starter platform:init <phone>' . PHP_EOL
+        . '       php vendor/bin/webman-starter platform:recover <new_phone> <reason> <channel> <reference>' . PHP_EOL);
+    exit(2);
+}
+
+try {
+    $autoload = $_composer_autoload_path ?? dirname(__DIR__) . '/vendor/autoload.php';
+    if (!is_file($autoload)) {
+        throw new RuntimeException('Composer autoloader is missing.');
+    }
+    require $autoload;
+
+    $phone = MainlandMobileNumber::fromInput($argv[2]);
+    $actorReference = executionIdentity();
+    if ($command === 'platform:recover') {
+        recoverPlatformAdministrator($argv, $phone, $actorReference);
+    } else {
+        $capsule = new Manager();
+        $capsule->addConnection(StarterDatabaseConfig::fromEnvironment());
+        $repository = new IlluminatePlatformAdminRepository($capsule->getDatabaseManager()->connection());
+        $service = new InitializePlatformAdminService($repository);
+        $service->initialize($phone, $actorReference);
+    }
+} catch (BusinessException $exception) {
+    $code = match ($exception->code()) {
+        'phone_invalid', 'platform_admin_already_initialized', 'audit_unavailable', 'validation_failed',
+        'offline_recovery_disabled', 'offline_recovery_not_eligible', 'verified_email_exists',
+        'phone_already_used', 'recovery_evidence_unverified', 'recovery_target_changed', 'not_found',
+        'verification_code_invalid', 'verification_attempts_exceeded', 'credential_expired',
+        'sms_rate_limited', 'sms_submission_failed', 'sms_submission_timeout' => $exception->code(),
+        default => 'internal_error',
+    };
+    fwrite(STDERR, $code . PHP_EOL);
+    exit(in_array($code, ['phone_invalid', 'validation_failed'], true) ? 2 : 1);
+} catch (Throwable) {
+    // Driver errors may contain SQL bindings or connection details.
+    fwrite(STDERR, 'internal_error' . PHP_EOL);
+    exit(1);
+}
+
+fwrite(STDOUT, ($command === 'platform:recover' ? 'platform_admin_recovered' : 'platform_admin_initialized') . PHP_EOL);
