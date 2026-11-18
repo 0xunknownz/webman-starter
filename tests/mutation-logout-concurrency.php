@@ -104,7 +104,7 @@ function testMutationsAfterConcurrentLogout(Fixtures $fixtures, SmsLoginFixture 
         $started = operatorRecoveryRequest($port, $operator, data: [
             'account_id' => $recoveryAccount, 'new_phone' => OPERATOR_NEW_PHONE, 'reason' => 'lost_phone',
             'evidence' => ['channel' => 'registered_contact', 'reference' => 'CASE-ALPHA'],
-        ]);
+        ], status: 201);
         $flow = '/' . $started['flow_id'];
         $beforeSms = count($qa->messages());
         $challenge = operatorRecoveryRequest($port, $operator, "$flow/new/send")['challenge_id'];
@@ -116,7 +116,7 @@ function testMutationsAfterConcurrentLogout(Fixtures $fixtures, SmsLoginFixture 
             'Manual recovery completion');
 
         $operator = $operatorLogin(240);
-        $revokeTarget = platformGrant($port, $operator, '13900138702');
+        $revokeTarget = platformGrant($port, $operator, '13900138702', status: 201);
         assertMutationRejectedAfterLogout($fixtures, $db, $port, $operator, 'POST', PLATFORM_ADMINS,
             'Platform grant', ['phone' => '13900138703']);
         $operator = $operatorLogin(300);

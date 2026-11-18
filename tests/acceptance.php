@@ -20,6 +20,7 @@ require __DIR__ . '/issue-10.php';
 require __DIR__ . '/issue-11.php';
 require __DIR__ . '/issue-12.php';
 require __DIR__ . '/mutation-logout-concurrency.php';
+require __DIR__ . '/ac-09.php';
 
 const PACKAGE = 'z0x/webman-starter';
 const PHONE = '13800138000';
@@ -314,6 +315,7 @@ function testHttp(Fixtures $fixtures): void
     $id = 'qa01:upstream.001';
     $ok = envelope($port, '/qa01/starter/health', 200, 'success', $id, $id);
     check($ok['message'] === 'success' && $ok['data'] === ['status' => 'ok'], 'Wrong liveness response');
+    envelope($port, '/index/json', 200, 'success', $id, $id);
     $generated = envelope($port, '/qa01/starter/health', 200, 'success', 'bad trace header');
     $missing = envelope($port, '/qa01/starter/health', 200, 'success');
     check($generated['trace_id'] !== $missing['trace_id'], 'Trace ID leaked into subsequent requests');
@@ -363,6 +365,7 @@ try {
     testPhoneRebind($fixtures, $smsLogin);
     testEmailRecovery($fixtures, $smsLogin);
     testOperatorRecovery($fixtures, $smsLogin);
+    testTightenedSmsAttempts($fixtures, $smsLogin);
     testMutationsAfterConcurrentLogout($fixtures, $smsLogin);
     testEmailChange($fixtures, $smsLogin);
 

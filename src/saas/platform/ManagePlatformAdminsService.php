@@ -22,10 +22,16 @@ final class ManagePlatformAdminsService
 
     public function grant(SessionIdentity $identity, string $phone): int
     {
+        return $this->grantWithOutcome($identity, $phone)['account_id'];
+    }
+
+    /** @return array{account_id: int, account_created: bool} */
+    public function grantWithOutcome(SessionIdentity $identity, string $phone): array
+    {
         $this->requirePlatformPurpose($identity);
         $number = MainlandMobileNumber::fromInput($phone);
 
-        return $this->repository->withGuard(function () use ($identity, $number): int {
+        return $this->repository->withGuard(function () use ($identity, $number): array {
             $now = gmdate('Y-m-d H:i:s');
             $actorId = $identity->accountId;
             $accounts = $this->repository->lockGrantAccounts($actorId, $number, $now);
@@ -46,7 +52,7 @@ final class ManagePlatformAdminsService
                 'result' => 'success',
             ], $now);
 
-            return $targetId;
+            return ['account_id' => $targetId, 'account_created' => $accounts['created']];
         });
     }
 

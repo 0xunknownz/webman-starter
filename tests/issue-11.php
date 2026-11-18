@@ -104,7 +104,7 @@ function testOperatorRecovery(Fixtures $fixtures, SmsLoginFixture $qa): void
         $email->execute(['manual-recovery@example.test', gmdate('Y-m-d H:i:s', SMS_TIME), $account]);
         operatorRecoveryRequest($port, $access, data: $input, status: 403, code: 'forbidden');
         $email->execute([null, null, $account]);
-        $started = operatorRecoveryRequest($port, $access, data: $input);
+        $started = operatorRecoveryRequest($port, $access, data: $input, status: 201);
         check(preg_match('/\A[0-9a-f]{32}\z/', $started['flow_id'] ?? '') === 1, 'Manual recovery did not return a flow');
         $flow = '/' . $started['flow_id'];
         operatorRecoveryRequest($port, $access, "$flow/complete", status: 401, code: 'credential_expired');

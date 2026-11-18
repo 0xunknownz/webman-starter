@@ -41,7 +41,7 @@ final class PhoneChangeService
             );
             $challenge = $this->issue($flow, false, $ip, $now);
             if ($challenge !== null) {
-                $this->repository->create($flow, $now);
+                $this->repository->create($flow, $now, oldChallengeIssued: true);
             }
 
             return [$flow, $challenge];
@@ -127,7 +127,7 @@ final class PhoneChangeService
 
     private function send(string $id, SessionIdentity|Closure $authorization, bool $new, string $ip, Closure $clock): string
     {
-        [$flow, $challenge, $now] = $this->withAuthorizedFlow($id, $authorization, $clock, function (PhoneChangeFlow $flow, int $now) use (
+        [$flow, $challenge, $now, $resend] = $this->withAuthorizedFlow($id, $authorization, $clock, function (PhoneChangeFlow $flow, int $now) use (
             $new, $ip,
         ): array {
             if ($new) {
@@ -135,12 +135,19 @@ final class PhoneChangeService
                 $this->requireAvailable($flow->oldPhone, $flow->newPhone);
             }
 
-            return [$flow, $this->issue($flow, $new, $ip, $now), $now];
+            $challenge = $this->issue($flow, $new, $ip, $now);
+            $resend = false;
+            if ($challenge !== null) {
+                // Redis also recognizes a live challenge issued before the SQL marker existed.
+                $resend = $this->repository->recordSmsIssue($flow, $new) || $challenge['replaced'];
+            }
+
+            return [$flow, $challenge, $now, $resend];
         });
 
         $challenge = $this->requireChallenge($flow, $new, $challenge, $now);
 
-        return $this->deliver($flow, $new, $challenge, $now);
+        return $this->deliver($flow, $new, $challenge, $now, $resend);
     }
 
     private function verify(
@@ -202,12 +209,17 @@ final class PhoneChangeService
     }
 
     /** @param array{id:string, code:string, replaced:bool} $challenge */
-    private function deliver(PhoneChangeFlow $flow, bool $new, #[\SensitiveParameter] array $challenge, int $now): string
-    {
+    private function deliver(
+        PhoneChangeFlow $flow,
+        bool $new,
+        #[\SensitiveParameter] array $challenge,
+        int $now,
+        bool $resend = false,
+    ): string {
         $phone = $new ? $flow->newPhone : $flow->oldPhone;
         $result = $this->sender->send($phone, self::PURPOSE, $challenge['code']);
-        if ($challenge['replaced']) {
-            $this->auditSms('sms_challenge_reissued', $flow, $phone, $now);
+        if ($resend) {
+            $this->auditSms('sms_challenge_reissued', $flow, $phone, $now, $result);
         }
         if ($result === SubmissionStatus::Rejected) {
             $this->auditSms('sms_submission_failed', $flow, $phone, $now);
@@ -221,10 +233,15 @@ final class PhoneChangeService
         return $challenge['id'];
     }
 
-    private function auditSms(string $action, PhoneChangeFlow $flow, MainlandMobileNumber $phone, int $now): void
-    {
+    private function auditSms(
+        string $action,
+        PhoneChangeFlow $flow,
+        MainlandMobileNumber $phone,
+        int $now,
+        ?SubmissionStatus $submission = null,
+    ): void {
         try {
-            $this->repository->auditSms($action, $flow, $phone, $now);
+            $this->repository->auditSms($action, $flow, $phone, $now, $submission);
         } catch (BusinessException $exception) {
             if ($exception->code() !== 'audit_unavailable') {
                 throw $exception;

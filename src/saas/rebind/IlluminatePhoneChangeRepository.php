@@ -10,6 +10,7 @@ use Illuminate\Database\QueryException;
 use RuntimeException;
 use Z0x\WebmanStarter\saas\contract\PlatformAdminRepositoryInterface;
 use Z0x\WebmanStarter\saas\domain\MainlandMobileNumber;
+use Z0x\WebmanStarter\saas\domain\SubmissionStatus;
 use Z0x\WebmanStarter\saas\infrastructure\IlluminatePlatformAdminRepository;
 use Z0x\WebmanStarter\Support\Exception\BusinessException;
 
@@ -36,7 +37,7 @@ final class IlluminatePhoneChangeRepository implements PhoneChangeRepositoryInte
         ];
     }
 
-    public function create(PhoneChangeFlow $flow, int $now): void
+    public function create(PhoneChangeFlow $flow, int $now, bool $oldChallengeIssued = false): void
     {
         try {
             $this->connection->table('starter_phone_changes')->insert([
@@ -48,6 +49,7 @@ final class IlluminatePhoneChangeRepository implements PhoneChangeRepositoryInte
                 'mode' => $flow->mode,
                 'source_verified_until' => $flow->sourceVerifiedUntil,
                 'new_verified_until' => $flow->newVerifiedUntil,
+                'old_sms_issued' => $oldChallengeIssued,
                 'actor_account_id' => $flow->actorAccountId,
                 'actor_ref' => $flow->actorRef,
                 'reason_ref' => $flow->reasonRef,
@@ -152,6 +154,15 @@ final class IlluminatePhoneChangeRepository implements PhoneChangeRepositoryInte
         }
     }
 
+    public function recordSmsIssue(PhoneChangeFlow $flow, bool $new): bool
+    {
+        $column = $new ? 'new_sms_issued' : 'old_sms_issued';
+        $updated = $this->connection->table('starter_phone_changes')->where('id', $flow->id)
+            ->where($column, false)->update([$column => true]);
+
+        return $updated === 0;
+    }
+
     public function recordProof(PhoneChangeFlow $flow, bool $new, int $validUntil): void
     {
         $this->connection->table('starter_phone_changes')->where('id', $flow->id)
@@ -205,12 +216,22 @@ final class IlluminatePhoneChangeRepository implements PhoneChangeRepositoryInte
         $this->audit->appendAudit('phone_changed', $flow->actorAccountId, $flow->accountId, $metadata, $utc);
     }
 
-    public function auditSms(string $action, PhoneChangeFlow $flow, MainlandMobileNumber $phone, int $now): void
-    {
-        $this->audit->appendAudit($action, $flow->actorAccountId, $flow->accountId, [
-            'phone_masked' => $phone->masked(),
-            'purpose' => 'rebind',
-        ], gmdate('Y-m-d H:i:s', $now));
+    public function auditSms(
+        string $action,
+        PhoneChangeFlow $flow,
+        MainlandMobileNumber $phone,
+        int $now,
+        ?SubmissionStatus $submission = null,
+    ): void {
+        $metadata = ['phone_masked' => $phone->masked(), 'purpose' => 'rebind'];
+        if ($submission !== null) {
+            $metadata['result'] = match ($submission) {
+                SubmissionStatus::Accepted => 'submitted',
+                SubmissionStatus::Rejected => 'submission_failed',
+                SubmissionStatus::TimedOut => 'submission_timeout',
+            };
+        }
+        $this->audit->appendAudit($action, $flow->actorAccountId, $flow->accountId, $metadata, gmdate('Y-m-d H:i:s', $now));
     }
 
     private static function operatorMode(string $mode): bool

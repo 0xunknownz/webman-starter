@@ -1,8 +1,12 @@
 <?php
 
+declare(strict_types=1);
+
 namespace app\controller;
 
 use support\Request;
+use Webman\Http\Response;
+use Z0x\WebmanStarter\Support\Http\ApiResponse;
 
 class IndexController
 {
@@ -34,9 +38,9 @@ EOF;
         return view('index/view', ['name' => 'webman']);
     }
 
-    public function json(Request $request)
+    public function json(Request $request): Response
     {
-        return json(['code' => 0, 'msg' => 'ok']);
+        return ApiResponse::success(request: $request);
     }
 
 }

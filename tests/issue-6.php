@@ -47,7 +47,7 @@ function testPlatformAdmins(Fixtures $fixtures, SmsLoginFixture $smsLogin): void
         sessionPlatform($port, $actor);
         sessionTokens(sessionRefresh($port, $initial['refresh_token']));
 
-        $newId = platformGrant($port, $actor, SMS_MEMBER);
+        $newId = platformGrant($port, $actor, SMS_MEMBER, status: 201);
         check(platformGrant($port, $actor, '+86' . OTHER_PHONE) === $existingId, 'Platform grant replaced the existing account');
         smsExpect(smsRequest($port, 'POST', PLATFORM_ADMINS, ['phone' => '+86' . SMS_MEMBER], sessionBearer($actor)),
             409, 'platform_admin_already_granted', 'Repeated platform grant for the same normalized phone');
@@ -137,10 +137,10 @@ function platformCurrentAccount(int $port, string $token): int
     return $me['data']['account_id'];
 }
 
-function platformGrant(int $port, string $token, string $phone): int
+function platformGrant(int $port, string $token, string $phone, int $status = 200): int
 {
     $body = smsExpect(smsRequest($port, 'POST', PLATFORM_ADMINS, ['phone' => $phone], sessionBearer($token)),
-        200, 'success', 'Grant platform administrator');
+        $status, 'success', 'Grant platform administrator');
     $id = $body['data']['account_id'] ?? null;
     check(is_int($id) && $id > 0, 'Grant did not return the target account ID');
 

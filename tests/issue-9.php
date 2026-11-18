@@ -190,11 +190,71 @@ function testPhoneRebind(Fixtures $fixtures, SmsLoginFixture $qa): void
     });
     echo "PASS authenticated phone change, quota order, OTP binding, atomic invitation cleanup and audit rollback\n";
 
+    testRebindResendAudit($fixtures, $qa);
     testRebindDeadlines($fixtures, $qa);
     testRebindEmail($fixtures, $qa);
     testRebindRace($fixtures, $qa);
     testRebindInviteRace($fixtures, $qa);
     testRebindInvalidatesDestinationCredentials($fixtures, $qa);
+}
+
+function testRebindResendAudit(Fixtures $fixtures, SmsLoginFixture $qa): void
+{
+    $db = $fixtures->database('qa_rebindaudit');
+    migrate($fixtures);
+    $account = rebindAccount($db, PHONE);
+    $qa->clock(SMS_TIME);
+    $qa->withHost('rebind-resend-audit', static function (int $port) use ($qa, $db, $account): void {
+        $access = smsToken(smsLogin($port, $qa->issue($port), purpose: 'organization'));
+        [$flow, $old] = rebindStart($qa, $port, $access, PHONE, REBIND_NEW);
+        $qa->clock(SMS_TIME + 60);
+        [$otherFlow, $otherOld] = rebindStart($qa, $port, $access, PHONE, REBIND_NEW);
+        phoneChangeRequest($port, $access, "$otherFlow/old/verify", $otherOld);
+
+        $qa->clock(SMS_TIME + 300);
+        phoneChangeRequest($port, $access, "$flow/old/verify", $old, 401, 'credential_expired');
+        $old = rebindIssue($qa, $port, $access, PHONE, "$flow/old/send");
+        phoneChangeRequest($port, $access, "$flow/old/verify", $old);
+        $new = rebindIssue($qa, $port, $access, REBIND_NEW, "$flow/new/send");
+        phoneChangeRequest($port, $access, "$flow/new/verify", $new);
+        phoneChangeRequest($port, $access, "$flow/new/verify", $new, 401, 'credential_expired');
+        $qa->clock(SMS_TIME + 359);
+        phoneChangeRequest($port, $access, "$flow/new/send", status: 429, code: 'sms_rate_limited');
+        $qa->clock(SMS_TIME + 360);
+        $new = rebindIssue($qa, $port, $access, REBIND_NEW, "$flow/new/send");
+        phoneChangeRequest($port, $access, "$flow/new/verify", $new);
+
+        $qa->clock(SMS_TIME + 420);
+        rebindIssue($qa, $port, $access, REBIND_NEW, "$otherFlow/new/send");
+        $qa->clock(SMS_TIME + 480);
+        $qa->outcome('failed');
+        phoneChangeRequest($port, $access, "$flow/new/send", status: 502, code: 'sms_submission_failed');
+        $qa->clock(SMS_TIME + 540);
+        $qa->outcome('timeout');
+        phoneChangeRequest($port, $access, "$flow/new/send", status: 504, code: 'sms_submission_timeout');
+        $qa->outcome('accepted');
+
+        $events = $db->query("SELECT actor_account_id, target_account_id, metadata, created_at FROM starter_audit_logs
+            WHERE action = 'sms_challenge_reissued' ORDER BY id")->fetchAll(PDO::FETCH_ASSOC);
+        $expected = [
+            [300, '**********8000', 'submitted'],
+            [360, '**********9001', 'submitted'],
+            [480, '**********9001', 'submission_failed'],
+            [540, '**********9001', 'submission_timeout'],
+        ];
+        check(count($events) === count($expected), 'Expected exactly one audit per reissued challenge');
+        foreach ($expected as $index => [$offset, $masked, $result]) {
+            $event = $events[$index];
+            $metadata = json_decode($event['metadata'], true, flags: JSON_THROW_ON_ERROR);
+            ksort($metadata);
+            check((int) $event['actor_account_id'] === $account && (int) $event['target_account_id'] === $account
+                && $event['created_at'] === gmdate('Y-m-d H:i:s', SMS_TIME + $offset)
+                && $metadata === ['phone_masked' => $masked, 'purpose' => 'rebind', 'result' => $result],
+                'Resend audit must identify the correct step and record the redacted submission result');
+        }
+    });
+    echo "PASS per-flow, per-step resend audit remains redacted after expiry or consumption
+";
 }
 
 function testRebindDeadlines(Fixtures $fixtures, SmsLoginFixture $qa): void

@@ -7,10 +7,7 @@ namespace Z0x\WebmanStarter\saas\session;
 use Closure;
 use DomainException;
 use Firebase\JWT\JWT;
-use Illuminate\Database\ConnectionInterface;
 use InvalidArgumentException;
-use Redis;
-use RuntimeException;
 use stdClass;
 use Z0x\WebmanStarter\Support\Exception\BusinessException;
 
@@ -24,24 +21,13 @@ final class SessionService
     private const SID_PATTERN = '/\A[0-9a-f]{64}\z/';
     private const REFRESH_TOKEN_PATTERN = '/\A([0-9a-f]{64})\.([0-9a-f]{64})\z/';
 
-    private const ROTATE_REFRESH = <<<'LUA'
-        if redis.call('GET', KEYS[1]) ~= ARGV[1] then
-            return 0
-        end
-        if not redis.call('SET', KEYS[1], ARGV[2], 'XX', 'KEEPTTL') then
-            return 0
-        end
-        return 1
-        LUA;
-
     private readonly string $namespace;
-    private readonly SessionAccountRepositoryInterface $accounts;
 
     public function __construct(
-        private readonly Redis $redis,
+        private readonly SessionStoreInterface $store,
         string $prefix,
         #[\SensitiveParameter] private readonly string $secret,
-        ConnectionInterface | SessionAccountRepositoryInterface $accounts,
+        private readonly SessionAccountRepositoryInterface $accounts,
     ) {
         if (preg_match('/\A[A-Za-z0-9_.-]+:[A-Za-z0-9_.-]+:?\z/', $prefix) !== 1) {
             throw new InvalidArgumentException('Session prefix must contain product and environment segments.');
@@ -49,14 +35,8 @@ final class SessionService
         if (strlen($secret) < 32) {
             throw new InvalidArgumentException('Session secret must be at least 32 bytes.');
         }
-        if (!in_array($redis->getOption(Redis::OPT_PREFIX), [null, false, ''], true)) {
-            throw new InvalidArgumentException('Session Redis connection must be unprefixed.');
-        }
 
         $this->namespace = rtrim($prefix, ':') . ':session';
-        $this->accounts = $accounts instanceof SessionAccountRepositoryInterface
-            ? $accounts
-            : new IlluminateSessionAccountRepository($accounts);
     }
 
     /**
@@ -95,10 +75,7 @@ final class SessionService
                 'refresh_hash' => hash('sha256', $refreshSecret),
             ], JSON_THROW_ON_ERROR);
 
-            // The session and its lifetime are written together and a SID can never replace an existing session.
-            if ($this->redis->set($this->sessionKey($sid), $session, ['nx', 'ex' => self::SESSION_TTL]) !== true) {
-                throw new RuntimeException('Could not create the session record.');
-            }
+            $this->store->create($this->sessionKey($sid), $session, self::SESSION_TTL);
 
             return $credentials;
         });
@@ -136,13 +113,7 @@ final class SessionService
 
             // Keep the original Redis expiry and compare the exact record read before taking the SQL locks.
             // A concurrent rotation changes that record. Logout or Redis expiry removes it entirely.
-            $result = $this->redis->eval(self::ROTATE_REFRESH, [
-                $this->sessionKey($sid), $encoded, json_encode($session, JSON_THROW_ON_ERROR),
-            ], 1);
-            if (!is_int($result)) {
-                throw new RuntimeException('Could not rotate the session refresh token.');
-            }
-            if ($result !== 1) {
+            if (!$this->store->rotate($this->sessionKey($sid), $encoded, json_encode($session, JSON_THROW_ON_ERROR))) {
                 throw BusinessException::tokenInvalid();
             }
 
@@ -156,9 +127,7 @@ final class SessionService
         if (preg_match(self::SID_PATTERN, $identity->sessionId) !== 1) {
             throw new InvalidArgumentException('Invalid session identity.');
         }
-        if (!is_int($this->redis->del($this->sessionKey($identity->sessionId)))) {
-            throw new RuntimeException('Could not revoke the session.');
-        }
+        $this->store->delete($this->sessionKey($identity->sessionId));
     }
 
     public function authenticate(#[\SensitiveParameter] string $token, ?string $expectedPurpose, int $now): SessionIdentity
@@ -226,8 +195,8 @@ final class SessionService
     /** @return array{string, array{session_id: string, account_id: int, purpose: string, expires_at: int, account_epoch?: string, platform_epoch?: ?string, refresh_hash?: string}} */
     private function readSession(string $sid, int $now): array
     {
-        $encoded = $this->redis->get($this->sessionKey($sid));
-        $session = is_string($encoded) ? json_decode($encoded, true) : null;
+        $encoded = $this->store->read($this->sessionKey($sid));
+        $session = $encoded !== null ? json_decode($encoded, true) : null;
         if (
             !is_array($session)
             || ($session['session_id'] ?? null) !== $sid
