@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Z0x\WebmanStarter\saas\profile;
 
+use InvalidArgumentException;
+use LengthException;
+use Z0x\WebmanStarter\saas\domain\ShortName;
 use Z0x\WebmanStarter\saas\session\SessionIdentity;
 use Z0x\WebmanStarter\saas\session\SessionService;
 use Z0x\WebmanStarter\Support\Exception\BusinessException;
@@ -52,16 +55,12 @@ final class ProfileService
             return null;
         }
 
-        // The UTF-8 match also fails for malformed input. Reject controls before trimming.
-        if (!is_string($value) || preg_match('/[\p{Cc}\p{Zl}\p{Zp}]/u', $value) !== 0) {
+        try {
+            return ShortName::normalize($value);
+        } catch (InvalidArgumentException) {
             throw BusinessException::validation(['display_name' => ['显示名称格式无效']]);
-        }
-
-        $name = preg_replace('/\A\p{Zs}+|\p{Zs}+\z/u', '', $value);
-        if ($name === null || preg_match('/\A.{1,50}\z/u', $name) !== 1) {
+        } catch (LengthException) {
             throw BusinessException::validation(['display_name' => ['显示名称须为 1–50 个字符']]);
         }
-
-        return $name;
     }
 }

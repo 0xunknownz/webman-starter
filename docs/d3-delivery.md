@@ -61,6 +61,10 @@ PHP 8.1.34、Composer 2.5.1、Webman 2.2.5、MySQL 8.0.46 和 Redis 8.6.2 下，
 
 从仓库根目录，以 PHP 8.1 运行。验收脚本启动隔离的真实 MySQL、Redis 和 Webman HTTP，使用受控短信和邮件发送器，并显式运行迁移与管理员初始化。测试时钟可定位到生效与到期边界的单秒。
 
+[正式制品升级验收](../tests/d3-release-upgrade.php)使用固定的公开 Composer 目录版本，需要能访问 GitHub 和 Packagist。它从 D2 模板安装基座 `1.1.1`，写入示例业务数据后使用 Composer 升级到 `2.0.0`，再验证库表与数据、现有会话及升级后的仓储装配。
+
+也可用 `php tests/d3-release-upgrade.php /path/to/release-zips` 指定本地制品目录。目录需包含基座 `1.1.1`、`2.0.0` 和模板 `1.0.0` 的原始发布 ZIP。脚本会核对三个 ZIP 的校验和。第三方依赖仍由 Composer 解析。
+
 ```bash
 export STARTER_TEST_WEBMAN_VERSION=2.2.5
 for test in tests/issue-{28,29,30,31}.php tests/d3-example.php; do
@@ -72,7 +76,7 @@ done
 export STARTER_TEST_WEBMAN_VERSION=2.2.5
 for test in tests/acceptance.php tests/issue-{14,15,17,18,19,20,21,22}.php \
   tests/d2-invitation-races.php tests/organization-audit.php tests/d2-example.php \
-  tests/template-candidate.php; do
+  tests/template-candidate.php tests/d3-release-upgrade.php; do
   php "$test" || exit 1
 done
 ```

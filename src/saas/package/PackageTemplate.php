@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Z0x\WebmanStarter\saas\package;
 
+use InvalidArgumentException;
+use LengthException;
+use Z0x\WebmanStarter\saas\domain\ShortName;
 use Z0x\WebmanStarter\Support\Exception\BusinessException;
 
 final class PackageTemplate
@@ -27,16 +30,11 @@ final class PackageTemplate
 
     public static function normalizeName(mixed $name): string
     {
-        // Match the display name rules. Reject malformed UTF-8 and controls before trimming.
-        if (!is_string($name) || preg_match('/[\p{Cc}\p{Zl}\p{Zp}]/u', $name) !== 0) {
+        try {
+            return ShortName::normalize($name);
+        } catch (InvalidArgumentException | LengthException) {
             throw new BusinessException('套餐名称无效', 'package_invalid', 422);
         }
-        $trimmed = preg_replace('/\A\p{Zs}+|\p{Zs}+\z/u', '', $name);
-        if ($trimmed === null || preg_match('/\A.{1,50}\z/u', $trimmed) !== 1) {
-            throw new BusinessException('套餐名称无效', 'package_invalid', 422);
-        }
-
-        return $trimmed;
     }
 
     public static function validateSeatLimit(mixed $seatLimit): int
