@@ -31,7 +31,7 @@ php start.php start
 | 创建套餐 | `POST /platform/packages` | `name`、整数 `seat_limit` |
 | 修改套餐 | `PATCH /platform/packages/{package_id}` | 至少一个字段 `name` 或 `seat_limit` |
 | 停用套餐 | `POST /platform/packages/{package_id}/retire` | 无 |
-| 调整订阅日期 | `PATCH /platform/organizations/{organization_id}/subscription/window` | `starts_at`、`expires_at`，均为精确到秒的 RFC 3339 |
+| 调整订阅日期 | `PATCH /platform/organizations/{organization_id}/subscription/window` | `starts_at`、`expires_at`，均为精确到秒的 RFC 3339。换算为 UTC 后，年份须在 1000–9999 之间 |
 | 显式更换套餐 | `PATCH /platform/organizations/{organization_id}/subscription/package` | 整数 `package_id` |
 | 平台归档 | `POST /platform/organizations/{organization_id}/archive` | 无 |
 | 所有者归档 | `POST /organizations/{organization_id}/archive` | 无 |

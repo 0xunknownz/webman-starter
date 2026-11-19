@@ -9,6 +9,21 @@
 
 The template tag prefix avoids a collision with the existing base tag `v1.0.0`. The template declares a base dependency of `^1.1.0`.
 
+## D3 source upgrade note
+
+D3 adds a required `PackageRepositoryInterface` constructor dependency to `IlluminateOrganizationRepository`. Direct construction must provide a package repository using the same database connection and a platform audit repository using that connection:
+
+```php
+$connection = Db::connection($databaseConnection);
+$packages = new IlluminatePackageRepository(
+    $connection,
+    new IlluminatePlatformAdminRepository($connection),
+);
+$organizations = new IlluminateOrganizationRepository($connection, $packages);
+```
+
+Update direct construction sites when upgrading to D3.
+
 ## Build and check the release candidates
 
 Run from a fresh checkout of the reviewed source revision with PHP 8.1 or later, the PHP ZIP extension, Composer 2, Git, `jq`, and `shasum`. Use the same ZIP bytes for testing and release upload. The base uses Composer's archive builder and the template uses the [template builder](../tools/build-template.php).
