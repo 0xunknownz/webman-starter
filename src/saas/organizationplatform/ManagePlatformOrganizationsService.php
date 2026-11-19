@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Z0x\WebmanStarter\saas\organizationplatform;
 
 use Closure;
+use LogicException;
 use SensitiveParameter;
 use Z0x\WebmanStarter\saas\contract\OrganizationAuditInterface;
 use Z0x\WebmanStarter\saas\domain\MainlandMobileNumber;
@@ -13,6 +14,9 @@ use Z0x\WebmanStarter\saas\invitation\InvitationLifecycle;
 use Z0x\WebmanStarter\saas\invitation\InvitationRepositoryInterface;
 use Z0x\WebmanStarter\saas\organization\Organization;
 use Z0x\WebmanStarter\saas\organization\SubscriptionWindow;
+use Z0x\WebmanStarter\saas\organizationaccess\OrganizationAccess;
+use Z0x\WebmanStarter\saas\organizationaccess\OrganizationAccessService;
+use Z0x\WebmanStarter\saas\organizationaccess\OrganizationOperation;
 use Z0x\WebmanStarter\saas\organizationaccess\OrganizationRole;
 use Z0x\WebmanStarter\saas\session\SessionIdentity;
 use Z0x\WebmanStarter\saas\session\SessionService;
@@ -30,6 +34,7 @@ final class ManagePlatformOrganizationsService
         private readonly OrganizationAuditInterface $audit,
         private readonly SessionService $sessions,
         private readonly Closure $clock,
+        private readonly ?OrganizationAccessService $access = null,
     ) {
     }
 
@@ -50,7 +55,7 @@ final class ManagePlatformOrganizationsService
             $number = self::number($phone);
             $this->lifecycle->lockAccountByPhone($number);
             $organization = $this->repository->create($name, $packageId, $subscription);
-            $now = $this->liveTime($actor);
+            $now = $this->sessions->liveTime($actor, $this->clock);
             $this->requireOwnerIssuance($organization, $now);
             $this->audit($organization, 'organization_created', $actor, $now, [
                 'name' => $organization->name,
@@ -96,30 +101,52 @@ final class ManagePlatformOrganizationsService
         return $this->withOrganization($actor, $organizationId, function (Organization $organization, int $now) use ($actor): array {
             $this->requireNotArchived($organization);
             $this->requirePending($organization);
-            $this->invitations->revokePending($organization->id);
-            $this->repository->setArchived($organization->id, $now);
-            $this->audit($organization, 'organization_opening_cancelled', $actor, $now, [
-                'phase' => 'pending', 'suspended' => $organization->suspended,
-            ]);
+            return $this->archiveLocked($organization, $actor, $now, 'organization_opening_cancelled');
+        });
+    }
 
-            return ['archived' => true] + self::state($organization);
+    public function archive(SessionIdentity $actor, int $organizationId): array
+    {
+        if ($actor->purpose === SessionService::PURPOSE_ORGANIZATION) {
+            $access = $this->access ?? throw new LogicException('Owner archival requires organization access checks.');
+
+            return $access->write(
+                $this->sessions,
+                $actor,
+                $organizationId,
+                OrganizationOperation::OrganizationArchive,
+                ($this->clock)(),
+                function (OrganizationAccess $context) use ($actor): array {
+                    $data = $this->archiveLocked($context->organization, $actor, $this->sessions->liveTime($actor, $this->clock), 'organization_archived');
+                    $this->sessions->liveTime($actor, $this->clock);
+
+                    return $data;
+                },
+                clock: $this->clock,
+            );
+        }
+
+        return $this->withOrganization($actor, $organizationId, function (Organization $organization, int $now) use ($actor): array {
+            $this->requireNotArchived($organization);
+
+            return $this->archiveLocked($organization, $actor, $now, 'organization_archived');
         });
     }
 
     public function restore(SessionIdentity $actor, int $organizationId): array
     {
         return $this->withOrganization($actor, $organizationId, function (Organization $organization, int $now) use ($actor): array {
-            $this->requirePending($organization);
             if (!$organization->archived) {
                 throw BusinessException::forbidden();
             }
-            // Clear only the archive marker. All prior reservations are already revoked by cancellation.
+            // Activation and suspension are stored independently and retained throughout archival.
             $this->repository->setArchived($organization->id, null);
+            $state = ['archived' => false] + self::state($organization);
             $this->audit($organization, 'organization_restored', $actor, $now, [
-                'phase' => 'pending', 'suspended' => $organization->suspended,
+                'phase' => $state['phase'], 'suspended' => $state['suspended'],
             ]);
 
-            return ['archived' => false] + self::state($organization);
+            return $state;
         });
     }
 
@@ -129,7 +156,7 @@ final class ManagePlatformOrganizationsService
         return $this->withOrganization($actor, $organizationId, function (Organization $organization, int $now) use ($actor, $invitationId): array {
             $this->requireOwnerIssuance($organization, $now);
             $invitation = $this->lockOwnerInvitation($organization->id, $invitationId);
-            $now = $this->liveTime($actor);
+            $now = $this->sessions->liveTime($actor, $this->clock);
             $this->requireOwnerIssuance($organization, $now);
 
             return $this->lifecycle->linkData($this->lifecycle->keep($invitation, $actor->accountId, $now));
@@ -141,7 +168,21 @@ final class ManagePlatformOrganizationsService
         $this->withOrganization($actor, $organizationId, function (Organization $organization) use ($actor, $invitationId): void {
             $this->requirePending($organization);
             $invitation = $this->lockOwnerInvitation($organization->id, $invitationId);
-            $this->lifecycle->revoke($invitation, $actor->accountId, $this->liveTime($actor));
+            $this->lifecycle->revoke($invitation, $actor->accountId, $this->sessions->liveTime($actor, $this->clock));
+        });
+    }
+
+    public function revokeMemberInvitation(SessionIdentity $actor, int $organizationId, int $invitationId): void
+    {
+        $this->withOrganization($actor, $organizationId, function (Organization $organization) use ($actor, $invitationId): void {
+            if (!$organization->suspended && !$organization->archived) {
+                throw BusinessException::forbidden();
+            }
+            $invitation = $this->lifecycle->find($organization->id, $invitationId, lock: true);
+            if ($invitation->role !== OrganizationRole::Member) {
+                throw BusinessException::notFound();
+            }
+            $this->lifecycle->revoke($invitation, $actor->accountId, $this->sessions->liveTime($actor, $this->clock));
         });
     }
 
@@ -190,7 +231,7 @@ final class ManagePlatformOrganizationsService
                 $this->lifecycle->lockAccountByPhone($phone);
             }
             $organization = $this->repository->lock($organizationId);
-            $this->requireOwnerIssuance($organization, $this->liveTime($actor));
+            $this->requireOwnerIssuance($organization, $this->sessions->liveTime($actor, $this->clock));
             $old = $this->lockOwnerInvitation($organizationId, $invitationId);
             if ($old->phone->e164 !== $hint?->phone->e164) {
                 throw Invitation::invalid();
@@ -198,7 +239,7 @@ final class ManagePlatformOrganizationsService
             if ($newPhone !== null && $newPhone->e164 === $old->phone->e164) {
                 throw BusinessException::validation(['phone' => ['请使用不同的受邀手机号']]);
             }
-            $now = $this->liveTime($actor);
+            $now = $this->sessions->liveTime($actor, $this->clock);
             $this->requireOwnerIssuance($organization, $now);
             $invitation = $this->lifecycle->replace($organization, $old, $newPhone ?? $old->phone, $actor->accountId, $now);
             if ($newPhone !== null) {
@@ -235,39 +276,26 @@ final class ManagePlatformOrganizationsService
         return $this->authorized($actor, function () use ($actor, $organizationId, $operation): mixed {
             $organization = $this->repository->lock($organizationId);
 
-            return $operation($organization, $this->liveTime($actor));
+            return $operation($organization, $this->sessions->liveTime($actor, $this->clock));
         });
     }
 
     /** @template T @param Closure():T $operation @return T */
     private function authorized(SessionIdentity $actor, Closure $operation): mixed
     {
-        if ($actor->purpose !== SessionService::PURPOSE_PLATFORM) {
-            throw new BusinessException('认证令牌用途不匹配', 'token_purpose_mismatch', 403);
-        }
-
-        // The shared SQL transaction holds account and platform qualification locks through commit.
-        // Following those locks, invite writes acquire phone locks before the organization and invitation rows.
-        return $this->repository->transaction(fn (): mixed => $this->sessions->withCurrentIdentity(
-            $actor,
-            ($this->clock)(),
-            function () use ($actor, $operation): mixed {
-                $this->liveTime($actor);
-                $result = $operation();
-                // SQL locking serializes account/platform changes. Redis logout can occur during other lock waits.
-                $this->liveTime($actor);
-
-                return $result;
-            },
-        ));
+        return $this->sessions->withPlatformWrite($actor, $this->clock, $this->repository->transaction(...), $operation);
     }
 
-    private function liveTime(SessionIdentity $actor): int
+    private function archiveLocked(Organization $organization, SessionIdentity $actor, int $now, string $action): array
     {
-        $now = ($this->clock)();
-        $this->sessions->requireLiveIdentity($actor, $now);
+        $this->invitations->revokePending($organization->id);
+        $this->repository->setArchived($organization->id, $now);
+        $state = ['archived' => true] + self::state($organization);
+        $this->audit($organization, $action, $actor, $now, [
+            'phase' => $state['phase'], 'suspended' => $state['suspended'],
+        ]);
 
-        return $now;
+        return $state;
     }
 
     private function requireOwnerIssuance(Organization $organization, int $now): void

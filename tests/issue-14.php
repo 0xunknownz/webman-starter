@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace StarterAcceptance;
 
+use Z0x\WebmanStarter\saas\infrastructure\IlluminatePlatformAdminRepository;
+use Z0x\WebmanStarter\saas\organization\IlluminateOrganizationRepository;
 use Z0x\WebmanStarter\saas\organization\SubscriptionWindow;
+use Z0x\WebmanStarter\saas\package\IlluminatePackageRepository;
 use Z0x\WebmanStarter\Support\Exception\BusinessException;
 
 require dirname(__DIR__) . '/vendor/autoload.php';
@@ -33,7 +36,9 @@ function seatRepository14(): array
     $connection = (new \Illuminate\Database\Connectors\ConnectionFactory(new \Illuminate\Container\Container()))
         ->make(\Z0x\WebmanStarter\saas\infrastructure\StarterDatabaseConfig::fromEnvironment());
 
-    return [$connection, new \Z0x\WebmanStarter\saas\organization\IlluminateOrganizationRepository($connection)];
+    $packages = new IlluminatePackageRepository($connection, new IlluminatePlatformAdminRepository($connection));
+
+    return [$connection, new IlluminateOrganizationRepository($connection, $packages)];
 }
 
 function reserve14(int $organizationId, string $number, int $now): string

@@ -6,18 +6,21 @@ use Illuminate\Database\Query\Builder;
 use Webman\Http\Request;
 use Webman\Http\Response;
 use Webman\Route;
+use Z0x\WebmanStarter\saas\infrastructure\IlluminatePlatformAdminRepository;
 use Z0x\WebmanStarter\saas\organization\IlluminateOrganizationRepository;
 use Z0x\WebmanStarter\saas\organizationaccess\IlluminateOrganizationMembershipRepository;
 use Z0x\WebmanStarter\saas\organizationaccess\OrganizationAccess;
 use Z0x\WebmanStarter\saas\organizationaccess\OrganizationAccessService;
 use Z0x\WebmanStarter\saas\organizationaccess\OrganizationOperation;
 use Z0x\WebmanStarter\saas\organizationaccess\OrganizationRole;
+use Z0x\WebmanStarter\saas\package\IlluminatePackageRepository;
 use Z0x\WebmanStarter\saas\session\SessionService;
 use Z0x\WebmanStarter\Support\Exception\BusinessException;
 use Z0x\WebmanStarter\Support\Http\ApiResponse;
 
 [$connection, $sessions] = issue17Dependencies();
-$organizations = new IlluminateOrganizationRepository($connection);
+$packages = new IlluminatePackageRepository($connection, new IlluminatePlatformAdminRepository($connection));
+$organizations = new IlluminateOrganizationRepository($connection, $packages);
 $access = new OrganizationAccessService($organizations, new IlluminateOrganizationMembershipRepository($connection), [
     'record.query' => [OrganizationRole::Admin, OrganizationRole::Member],
     'record.export' => [OrganizationRole::Admin],

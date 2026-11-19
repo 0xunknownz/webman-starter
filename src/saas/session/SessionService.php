@@ -156,6 +156,38 @@ final class SessionService
         );
     }
 
+    /**
+     * @template T
+     * @param Closure():int $clock
+     * @param Closure(Closure():T):T $transaction Transaction on the same connection as the session account locks.
+     * @param Closure():T $operation
+     * @return T
+     */
+    public function withPlatformWrite(SessionIdentity $actor, Closure $clock, Closure $transaction, Closure $operation): mixed
+    {
+        if ($actor->purpose !== self::PURPOSE_PLATFORM) {
+            throw new BusinessException('认证令牌用途不匹配', 'token_purpose_mismatch', 403);
+        }
+
+        return $transaction(fn (): mixed => $this->withCurrentIdentity($actor, $clock(), function () use ($actor, $clock, $operation): mixed {
+            // Redis logout or expiry can occur while waiting for the qualification or business row locks.
+            $this->liveTime($actor, $clock);
+            $result = $operation();
+            $this->liveTime($actor, $clock);
+
+            return $result;
+        }));
+    }
+
+    /** @param Closure():int $clock */
+    public function liveTime(SessionIdentity $actor, Closure $clock): int
+    {
+        $now = $clock();
+        $this->requireLiveIdentity($actor, $now);
+
+        return $now;
+    }
+
     /** @template T @param Closure():T $operation @return T */
     public function withCurrentIdentity(SessionIdentity $identity, int $now, Closure $operation): mixed
     {

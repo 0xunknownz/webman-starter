@@ -6,6 +6,7 @@ namespace Z0x\WebmanStarter\saas\organization;
 
 use DateTimeImmutable;
 use DateTimeZone;
+use Exception;
 use Z0x\WebmanStarter\Support\Exception\BusinessException;
 
 final class SubscriptionWindow
@@ -28,6 +29,12 @@ final class SubscriptionWindow
         return new self(self::parse($startsAt), self::parse($expiresAt));
     }
 
+    public function isSameAs(self $other): bool
+    {
+        return $this->startsAt->getTimestamp() === $other->startsAt->getTimestamp()
+            && $this->expiresAt->getTimestamp() === $other->expiresAt->getTimestamp();
+    }
+
     public function statusAt(int $now): string
     {
         $time = new DateTimeImmutable('@' . $now);
@@ -46,7 +53,11 @@ final class SubscriptionWindow
         ) !== 1) {
             throw self::invalid();
         }
-        $time = new DateTimeImmutable($value);
+        try {
+            $time = new DateTimeImmutable($value);
+        } catch (Exception) {
+            throw self::invalid();
+        }
         $errors = DateTimeImmutable::getLastErrors();
         if ($errors !== false && ($errors['warning_count'] > 0 || $errors['error_count'] > 0)) {
             throw self::invalid();

@@ -50,6 +50,11 @@ final class PlatformOrganizationController
         return ApiResponse::success($this->organizations->cancelOpening($actor, self::id($organizationId)), request: $request);
     }
 
+    public function archive(Request $request, SessionIdentity $actor, string $organizationId): Response
+    {
+        return ApiResponse::success($this->organizations->archive($actor, self::id($organizationId)), request: $request);
+    }
+
     public function restore(Request $request, SessionIdentity $actor, string $organizationId): Response
     {
         return ApiResponse::success($this->organizations->restore($actor, self::id($organizationId)), request: $request);
@@ -65,6 +70,13 @@ final class PlatformOrganizationController
     public function revoke(Request $request, SessionIdentity $actor, string $organizationId, string $invitationId): Response
     {
         $this->organizations->revoke($actor, self::id($organizationId), self::id($invitationId));
+
+        return ApiResponse::deleted(request: $request);
+    }
+
+    public function revokeMemberInvitation(Request $request, SessionIdentity $actor, string $organizationId, string $invitationId): Response
+    {
+        $this->organizations->revokeMemberInvitation($actor, self::id($organizationId), self::id($invitationId));
 
         return ApiResponse::deleted(request: $request);
     }

@@ -23,7 +23,7 @@ final class InvitationLifecycle
     public function __construct(
         private readonly OrganizationRepositoryInterface $organizations,
         private readonly InvitationRepositoryInterface $invitations,
-        private readonly InvitationLink $links,
+        private readonly ?InvitationLink $links,
         private readonly OrganizationAuditInterface $audit,
     ) {
     }
@@ -36,7 +36,7 @@ final class InvitationLifecycle
     /** Returns recognized historical rows as well; callers check activity and authorization independently. */
     public function resolve(#[SensitiveParameter] string $token): Invitation
     {
-        return $this->invitations->findBySelector($this->links->selector($token)) ?? throw BusinessException::notFound();
+        return $this->invitations->findBySelector($this->requireLinks()->selector($token)) ?? throw BusinessException::notFound();
     }
 
     public function lockAccountByPhone(MainlandMobileNumber $phone): ?int
@@ -96,9 +96,14 @@ final class InvitationLifecycle
     {
         return [
             'invitation_id' => $invitation->id,
-            'link' => $this->links->forSelector($invitation->selector ?? throw Invitation::invalid()),
+            'link' => $this->requireLinks()->forSelector($invitation->selector ?? throw Invitation::invalid()),
             'expires_at' => gmdate(DATE_ATOM, $invitation->expiresAt),
         ];
+    }
+
+    private function requireLinks(): InvitationLink
+    {
+        return $this->links ?? throw BusinessException::notFound();
     }
 
     /** @param array<string, bool|int|string|null> $metadata */

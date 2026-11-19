@@ -28,6 +28,8 @@ final class PlatformOrganizationRoutes
             $controller()->setSuspended($request, $request->starterIdentity, $organizationId, false))->middleware($platformAuth);
         Route::post($organization . '/cancel-opening', static fn (Request $request, string $organizationId): Response =>
             $controller()->cancelOpening($request, $request->starterIdentity, $organizationId))->middleware($platformAuth);
+        Route::post($organization . '/archive', static fn (Request $request, string $organizationId): Response =>
+            $controller()->archive($request, $request->starterIdentity, $organizationId))->middleware($platformAuth);
         Route::post($organization . '/restore', static fn (Request $request, string $organizationId): Response =>
             $controller()->restore($request, $request->starterIdentity, $organizationId))->middleware($platformAuth);
 
@@ -35,9 +37,18 @@ final class PlatformOrganizationRoutes
             $controller()->keep($request, $request->starterIdentity, $organizationId, $invitationId))->middleware($platformAuth);
         Route::delete($invitation, static fn (Request $request, string $organizationId, string $invitationId): Response =>
             $controller()->revoke($request, $request->starterIdentity, $organizationId, $invitationId))->middleware($platformAuth);
+        Route::delete($organization . '/invitations/{invitationId:[1-9][0-9]*}', static fn (Request $request, string $organizationId, string $invitationId): Response =>
+            $controller()->revokeMemberInvitation($request, $request->starterIdentity, $organizationId, $invitationId))->middleware($platformAuth);
         Route::post($invitation . '/reissue', static fn (Request $request, string $organizationId, string $invitationId): Response =>
             $controller()->reissue($request, $request->starterIdentity, $organizationId, $invitationId))->middleware($platformAuth);
         Route::post($invitation . '/change-phone', static fn (Request $request, string $organizationId, string $invitationId): Response =>
             $controller()->changePhone($request, $request->starterIdentity, $organizationId, $invitationId))->middleware($platformAuth);
+    }
+
+    /** @param callable(): PlatformOrganizationController $controller */
+    public static function registerOwnerArchive(callable $controller, MiddlewareInterface $organizationAuth): void
+    {
+        Route::post('/organizations/{organizationId:[1-9][0-9]*}/archive', static fn (Request $request, string $organizationId): Response =>
+            $controller()->archive($request, $request->starterIdentity, $organizationId))->middleware($organizationAuth);
     }
 }

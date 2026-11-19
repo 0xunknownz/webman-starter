@@ -11,6 +11,7 @@ use Z0x\WebmanStarter\saas\domain\MainlandMobileNumber;
 use Z0x\WebmanStarter\saas\domain\SubmissionStatus;
 use Z0x\WebmanStarter\saas\http\SafeErrorMiddleware;
 use Z0x\WebmanStarter\saas\infrastructure\IlluminateOrganizationAudit;
+use Z0x\WebmanStarter\saas\infrastructure\IlluminatePlatformAdminRepository;
 use Z0x\WebmanStarter\saas\invitation\IlluminateInvitationRepository;
 use Z0x\WebmanStarter\saas\invitation\InvitationController;
 use Z0x\WebmanStarter\saas\invitation\InvitationLifecycle;
@@ -22,6 +23,7 @@ use Z0x\WebmanStarter\saas\invitationverification\InvitationVerificationAuditInt
 use Z0x\WebmanStarter\saas\organization\IlluminateOrganizationRepository;
 use Z0x\WebmanStarter\saas\organizationaccess\IlluminateOrganizationMembershipRepository;
 use Z0x\WebmanStarter\saas\organizationaccess\OrganizationAccessService;
+use Z0x\WebmanStarter\saas\package\IlluminatePackageRepository;
 use Z0x\WebmanStarter\saas\session\SessionService;
 use Z0x\WebmanStarter\saas\verification\RatePolicy;
 use Z0x\WebmanStarter\saas\verification\RedisVerification;
@@ -30,7 +32,8 @@ use Z0x\WebmanStarter\Support\Http\ApiResponse;
 
 [$connection, $sessions, $redis] = issue18Dependencies();
 $now = (int) getenv('ISSUE18_NOW');
-$organizations = new IlluminateOrganizationRepository($connection);
+$packages = new IlluminatePackageRepository($connection, new IlluminatePlatformAdminRepository($connection));
+$organizations = new IlluminateOrganizationRepository($connection, $packages);
 $membership = new IlluminateOrganizationMembershipRepository($connection);
 $invitations = new IlluminateInvitationRepository($connection);
 $links = new InvitationLink((string) getenv('ISSUE18_PAGE'), (string) getenv('ISSUE18_SECRET'));

@@ -33,7 +33,7 @@ composer install
 
 ## SaaS foundation
 
-See [D1 setup and operations](docs/saas-d1.md) for the Webman example, explicit database migration and first platform administrator initialization.
+See [D1 setup and operations](docs/saas-d1.md) for explicit migration and administrator initialization, [the Webman example](docs/d2-template.md) for organization onboarding, and [D3 subscription and lifecycle](docs/d3-delivery.md) for package templates, subscription changes, archiving, and restoration.
 
 ## Usage
 

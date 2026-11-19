@@ -7,9 +7,11 @@ namespace StarterAcceptance;
 use Illuminate\Database\MySqlConnection;
 use PDO;
 use RuntimeException;
+use Z0x\WebmanStarter\saas\infrastructure\IlluminatePlatformAdminRepository;
 use Z0x\WebmanStarter\saas\membership\IlluminateMembershipRepository;
 use Z0x\WebmanStarter\saas\membership\MembershipInvalidatorInterface;
 use Z0x\WebmanStarter\saas\organization\IlluminateOrganizationRepository;
+use Z0x\WebmanStarter\saas\package\IlluminatePackageRepository;
 
 /** @return array<string, int> */
 function seedIssue21(PDO $sql, int $now): array
@@ -182,7 +184,8 @@ function checkIssue21Invalidation(PDO $sql, array $ids, int $now): void
     $sql->prepare('INSERT INTO fixture_issue21_transfers VALUES (1, ?, ?, NULL), (2, ?, ?, NULL), (3, ?, ?, NULL)')
         ->execute([$ids['b'], $ids['dual'], $ids['a'], $ids['dual'], $ids['b'], $ids['owner_b']]);
     $connection = new MySqlConnection($sql);
-    $organizations = new IlluminateOrganizationRepository($connection);
+    $packages = new IlluminatePackageRepository($connection, new IlluminatePlatformAdminRepository($connection));
+    $organizations = new IlluminateOrganizationRepository($connection, $packages);
     $repository = new IlluminateMembershipRepository($connection, new class ($connection) implements MembershipInvalidatorInterface {
         public function __construct(private readonly MySqlConnection $connection)
         {

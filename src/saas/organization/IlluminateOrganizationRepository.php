@@ -11,12 +11,15 @@ use Illuminate\Database\ConnectionInterface;
 use Illuminate\Database\Query\Builder;
 use LogicException;
 use Z0x\WebmanStarter\saas\domain\MainlandMobileNumber;
+use Z0x\WebmanStarter\saas\package\PackageRepositoryInterface;
 use Z0x\WebmanStarter\Support\Exception\BusinessException;
 
 final class IlluminateOrganizationRepository implements OrganizationRepositoryInterface
 {
-    public function __construct(private readonly ConnectionInterface $connection)
-    {
+    public function __construct(
+        private readonly ConnectionInterface $connection,
+        private readonly PackageRepositoryInterface $packages,
+    ) {
     }
 
     public function transaction(Closure $operation): mixed
@@ -49,30 +52,19 @@ final class IlluminateOrganizationRepository implements OrganizationRepositoryIn
     public function create(string $name, int $packageId, SubscriptionWindow $subscription): Organization
     {
         $this->requireTransaction();
-        $package = $this->connection->table('starter_packages')->where('id', $packageId)->lockForUpdate()->first();
-        if ($package === null) {
-            throw BusinessException::notFound();
-        }
-        if ($package->retired_at !== null) {
-            throw new BusinessException('套餐已停用', 'package_retired', 409);
-        }
+        $package = $this->packages->lockAvailable($packageId);
         $name = self::validatedName($name, 100, 'organization_name_invalid');
-        $packageName = self::validatedName($package->name, 50, 'package_invalid');
-        $seatLimit = (int) $package->seat_limit;
-        if ($seatLimit < 1 || $seatLimit > 100_000) {
-            throw new BusinessException('套餐席位无效', 'package_invalid', 422);
-        }
         $utc = new DateTimeZone('UTC');
         $id = $this->connection->table('starter_organizations')->insertGetId([
             'name' => $name,
-            'package_id' => $packageId,
-            'package_name' => $packageName,
-            'seat_limit' => $seatLimit,
+            'package_id' => $package->id,
+            'package_name' => $package->name,
+            'seat_limit' => $package->seatLimit,
             'subscription_starts_at' => $subscription->startsAt->setTimezone($utc)->format('Y-m-d H:i:s'),
             'subscription_expires_at' => $subscription->expiresAt->setTimezone($utc)->format('Y-m-d H:i:s'),
         ]);
 
-        return new Organization((int) $id, $name, false, false, false, $subscription, $packageId, $packageName, $seatLimit);
+        return new Organization((int) $id, $name, false, false, false, $subscription, $package->id, $package->name, $package->seatLimit);
     }
 
     public static function validatedName(string $name, int $limit, string $code): string

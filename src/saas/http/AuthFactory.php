@@ -50,6 +50,9 @@ use Z0x\WebmanStarter\saas\ownership\IlluminateOwnershipTransferRepository;
 use Z0x\WebmanStarter\saas\ownership\OwnershipTransferController;
 use Z0x\WebmanStarter\saas\ownership\OwnershipTransferInvalidator;
 use Z0x\WebmanStarter\saas\ownership\OwnershipTransferService;
+use Z0x\WebmanStarter\saas\package\IlluminatePackageRepository;
+use Z0x\WebmanStarter\saas\package\ManagePackagesService;
+use Z0x\WebmanStarter\saas\package\PackageController;
 use Z0x\WebmanStarter\saas\platform\IlluminatePlatformAdminMutationRepository;
 use Z0x\WebmanStarter\saas\platform\ManagePlatformAdminsService;
 use Z0x\WebmanStarter\saas\platform\PlatformAdminController;
@@ -69,6 +72,9 @@ use Z0x\WebmanStarter\saas\service\SmsLoginService;
 use Z0x\WebmanStarter\saas\session\IlluminateSessionAccountRepository;
 use Z0x\WebmanStarter\saas\session\RedisSessionStore;
 use Z0x\WebmanStarter\saas\session\SessionService;
+use Z0x\WebmanStarter\saas\subscription\IlluminateSubscriptionRepository;
+use Z0x\WebmanStarter\saas\subscription\ManageSubscriptionsService;
+use Z0x\WebmanStarter\saas\subscription\SubscriptionController;
 use Z0x\WebmanStarter\saas\verification\RatePolicy;
 use Z0x\WebmanStarter\saas\verification\RedisVerification;
 use Z0x\WebmanStarter\Support\Exception\BusinessException;
@@ -103,7 +109,7 @@ final class AuthFactory
         $repository = new IlluminateMembershipRepository($connection, new OwnershipTransferInvalidator($transfers, $audit));
 
         return new MembershipController(new MembershipService(
-            new OrganizationAccessService(new IlluminateOrganizationRepository($connection), $repository),
+            new OrganizationAccessService($this->organizationRepository($connection), $repository),
             $this->sessions($connection, $this->redisClient()),
             $repository,
             $audit,
@@ -114,7 +120,7 @@ final class AuthFactory
     public function invitationController(): InvitationController
     {
         $connection = Db::connection($this->databaseConnection);
-        $organizations = new IlluminateOrganizationRepository($connection);
+        $organizations = $this->organizationRepository($connection);
 
         return new InvitationController(new ManageInvitationsService(
             new OrganizationAccessService($organizations, new IlluminateOrganizationMembershipRepository($connection)),
@@ -128,13 +134,43 @@ final class AuthFactory
     {
         $connection = Db::connection($this->databaseConnection);
 
+        $organizations = $this->organizationRepository($connection);
+
         return new PlatformOrganizationController(new ManagePlatformOrganizationsService(
-            new IlluminatePlatformOrganizationRepository($connection, new IlluminateOrganizationRepository($connection)),
+            new IlluminatePlatformOrganizationRepository($connection, $organizations),
             new IlluminateInvitationRepository($connection),
-            $this->invitationLifecycle($connection),
+            $this->invitationLifecycle($connection, requirePage: false),
             new IlluminateOrganizationAudit($connection),
             $this->sessions($connection, $this->redisClient()),
             $this->clock,
+            new OrganizationAccessService($organizations, new IlluminateOrganizationMembershipRepository($connection)),
+        ));
+    }
+
+    public function packageController(): PackageController
+    {
+        $connection = Db::connection($this->databaseConnection);
+
+        return new PackageController(new ManagePackagesService(
+            $this->packageRepository($connection),
+            $this->sessions($connection, $this->redisClient()),
+            $this->clock,
+        ));
+    }
+
+    public function subscriptionController(): SubscriptionController
+    {
+        $connection = Db::connection($this->databaseConnection);
+
+        $packages = $this->packageRepository($connection);
+        $organizations = new IlluminateOrganizationRepository($connection, $packages);
+
+        return new SubscriptionController(new ManageSubscriptionsService(
+            new IlluminateSubscriptionRepository($connection, $organizations),
+            new IlluminateOrganizationAudit($connection),
+            $this->sessions($connection, $this->redisClient()),
+            $this->clock,
+            $packages,
         ));
     }
 
@@ -149,7 +185,7 @@ final class AuthFactory
         );
 
         return new InvitationAcceptanceController(new AcceptInvitationService(
-            new IlluminateOrganizationRepository($connection),
+            $this->organizationRepository($connection),
             $this->invitationLifecycle($connection),
             new IlluminateInvitationRepository($connection),
             new IlluminateInvitationAcceptanceRepository($connection),
@@ -166,7 +202,7 @@ final class AuthFactory
         $repository = new IlluminateOwnershipTransferRepository($connection);
 
         return new OwnershipTransferController(new OwnershipTransferService(
-            new OrganizationAccessService(new IlluminateOrganizationRepository($connection), new IlluminateOrganizationMembershipRepository($connection)),
+            new OrganizationAccessService($this->organizationRepository($connection), new IlluminateOrganizationMembershipRepository($connection)),
             $this->sessions($connection, $this->redisClient()),
             $repository,
             $audit,
@@ -179,7 +215,7 @@ final class AuthFactory
     {
         $connection = Db::connection($this->databaseConnection);
 
-        return new OrganizationAccessService(new IlluminateOrganizationRepository($connection),
+        return new OrganizationAccessService($this->organizationRepository($connection),
             new IlluminateOrganizationMembershipRepository($connection), $permissions);
     }
 
@@ -188,16 +224,26 @@ final class AuthFactory
         return $this->sessions(Db::connection($this->databaseConnection), $this->redisClient());
     }
 
-    private function invitationLifecycle(ConnectionInterface $connection): InvitationLifecycle
+    private function organizationRepository(ConnectionInterface $connection): IlluminateOrganizationRepository
     {
-        if ($this->invitationPageUrl === null) {
+        return new IlluminateOrganizationRepository($connection, $this->packageRepository($connection));
+    }
+
+    private function packageRepository(ConnectionInterface $connection): IlluminatePackageRepository
+    {
+        return new IlluminatePackageRepository($connection, new IlluminatePlatformAdminRepository($connection));
+    }
+
+    private function invitationLifecycle(ConnectionInterface $connection, bool $requirePage = true): InvitationLifecycle
+    {
+        if ($requirePage && $this->invitationPageUrl === null) {
             throw BusinessException::notFound();
         }
 
         return new InvitationLifecycle(
-            new IlluminateOrganizationRepository($connection),
+            $this->organizationRepository($connection),
             new IlluminateInvitationRepository($connection),
-            new InvitationLink($this->invitationPageUrl, $this->secret),
+            $this->invitationPageUrl === null ? null : new InvitationLink($this->invitationPageUrl, $this->secret),
             new IlluminateOrganizationAudit($connection),
         );
     }
