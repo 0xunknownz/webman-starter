@@ -138,7 +138,8 @@ function testOperatorRecovery(Fixtures $fixtures, SmsLoginFixture $qa): void
         sessionRefresh($port, $target['refresh_token'], 401, 'token_invalid');
         $fresh = smsToken(smsLogin($port, $qa->issue($port, OPERATOR_NEW_PHONE), phone: OPERATOR_NEW_PHONE, purpose: 'organization'));
         smsExpect(smsRequest($port, 'GET', '/saas/account/profile', headers: sessionBearer($fresh)), 200, 'success', 'Recovered account login');
-        assertOperatorRecoveryAudit($db, $account, $actor, 'manual_recovery', 'registered_contact', SMS_MEMBER);
+        $audit = assertOperatorRecoveryAudit($db, $account, $actor, 'manual_recovery', 'registered_contact', SMS_MEMBER);
+        assertPhoneChangeAuditQuery($port, $access, $db, $actor, $account, $audit);
     }, ['QA_OPERATOR_RECOVERY_CASE' => $case]);
     echo "PASS manual recovery requires platform authorization, checked evidence, fresh SMS and transactional audit\n";
 
@@ -282,7 +283,8 @@ function testOfflineOperatorRecovery(Fixtures $fixtures, SmsLoginFixture $qa, st
         $fresh = smsToken(smsLogin($port, $qa->issue($port, OPERATOR_NEW_PHONE), phone: OPERATOR_NEW_PHONE));
         $me = smsExpect(smsRequest($port, 'GET', PLATFORM_ME, headers: sessionBearer($fresh)), 200, 'success', 'Offline recovered platform login');
         check($me['data']['account_id'] === $account, 'Offline recovery did not preserve the active platform qualification');
-        assertOperatorRecoveryAudit($db, $account, $actor, 'offline_recovery', 'authorized_channel', PHONE);
+        $audit = assertOperatorRecoveryAudit($db, $account, $actor, 'offline_recovery', 'authorized_channel', PHONE);
+        assertPhoneChangeAuditQuery($port, $fresh, $db, null, $account, $audit);
     }, $env);
     echo "PASS offline recovery enforces CLI opt-in and current sole-admin eligibility through real SMS input and audit\n";
 }
@@ -340,7 +342,8 @@ function awaitOfflineRecoverySms(Fixtures $fixtures, SmsLoginFixture $qa, Proces
     return $sms['code'];
 }
 
-function assertOperatorRecoveryAudit(PDO $db, int $account, int|string $actor, string $mode, string $channel, string $oldPhone): void
+/** @return array<string, string> */
+function assertOperatorRecoveryAudit(PDO $db, int $account, int|string $actor, string $mode, string $channel, string $oldPhone): array
 {
     $rows = $db->query("SELECT actor_account_id, target_account_id, metadata FROM starter_audit_logs WHERE action = 'phone_changed'")
         ->fetchAll(PDO::FETCH_ASSOC);
@@ -357,6 +360,8 @@ function assertOperatorRecoveryAudit(PDO $db, int $account, int|string $actor, s
         check((int) $rows[0]['actor_account_id'] === $actor, 'Manual recovery audit has the wrong platform operator');
     }
     check($audit == $expected, 'Expected only approved reason, opaque evidence reference and redacted audit metadata');
+
+    return $expected;
     check($db->query("SELECT phone FROM starter_accounts WHERE id = $account")->fetchColumn() === '+86' . OPERATOR_NEW_PHONE,
         'Recovery did not preserve the original account ID');
     check((int) $db->query("SELECT COUNT(*) FROM starter_invitations WHERE phone = '+86$oldPhone' AND status = 'pending'")->fetchColumn() === 0,

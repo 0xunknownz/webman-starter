@@ -15,7 +15,7 @@ const D4_BASELINE = [
     'webman-starter-template-1.0.0.zip' => ['template-v1.0.0', '8304b23ac3d76af9c596c18cd413afd80747fb0d'],
 ];
 
-function d4Catalog(Fixtures $fixture, ?string $mirror): string
+function d4Catalog(Fixtures $fixture, ?string $mirror, ?string $releaseZip): string
 {
     $packages = [];
     foreach (D4_BASELINE as $asset => [$tag, $checksum]) {
@@ -28,14 +28,21 @@ function d4Catalog(Fixtures $fixture, ?string $mirror): string
         check(is_file($zip) && sha1_file($zip) === $checksum, "Published checksum mismatch for $asset");
         d4AddZip($packages, $zip, $tag === 'v2.0.0' ? '2.0.0' : '1.0.0');
     }
-    $source = "$fixture->dir/candidate-source";
-    check(mkdir($source, 0700), 'Create an isolated candidate source snapshot');
-    foreach (['composer.json', 'src', 'bin', 'database', 'phinx.php'] as $path) {
-        copyTree(dirname(__DIR__) . "/$path", "$source/$path");
-    }
-    $fixture->run([PHP_BINARY, composerPath(), 'archive', '--format=zip', "--dir=$fixture->dir", '--file=d4-candidate', '--no-interaction'],
-        'Build D4 candidate ZIP', $source);
     $candidate = "$fixture->dir/d4-candidate.zip";
+    if ($releaseZip === null) {
+        $source = "$fixture->dir/candidate-source";
+        check(mkdir($source, 0700), 'Create an isolated candidate source snapshot');
+        foreach (['composer.json', 'src', 'bin', 'database', 'phinx.php'] as $path) {
+            copyTree(dirname(__DIR__) . "/$path", "$source/$path");
+        }
+        $fixture->run([PHP_BINARY, composerPath(), 'archive', '--format=zip', "--dir=$fixture->dir", '--file=d4-candidate', '--no-interaction'],
+            'Build D4 candidate ZIP', $source);
+    } else {
+        $checksum = hash_file('sha256', $releaseZip);
+        check($checksum !== false && copy($releaseZip, $candidate) && hash_file('sha256', $candidate) === $checksum,
+            'The isolated ZIP must match the supplied release artifact byte for byte');
+        printf("Testing supplied D4 release ZIP (SHA-256 %s)\n", $checksum);
+    }
     $archive = new \ZipArchive();
     check($archive->open($candidate) === true, 'Open D4 candidate ZIP');
     check($archive->locateName('src/saas/audit/AuditEvent.php') !== false
@@ -128,8 +135,9 @@ function d4CandidateUpgrade(Fixtures $fixture, string $catalog): void
             'Existing organization session and record survive the upgrade');
         check(d3Request($port, 'GET', '/platform/audit-logs?action=organization_renamed', access: $admin)['items'][0]['organization_id'] === $id,
             'Existing platform session can read historical D3 events after upgrade');
-        check(d3Request($port, 'GET', $path . '/audit-logs?action=organization_renamed', access: $owner)['items'][0]['metadata']['new_name'] === 'D3 历史改名',
-            'Historical D3 organization audit is available after upgrade');
+        $historical = d3Request($port, 'GET', $path . '/audit-logs?action=organization_renamed', access: $owner)['items'][0];
+        check($historical['organization_id'] === $id && $historical['metadata'] === ['old_name' => '[redacted]', 'new_name' => '[redacted]'],
+            'Historical D3 organization audit is available with the same name redaction after upgrade');
     }, D3_HOST_ENV);
     $before = snapshot($sql);
     composerWithoutDdl($fixture, ['remove', PACKAGE, '--no-progress']);
@@ -139,10 +147,13 @@ function d4CandidateUpgrade(Fixtures $fixture, string $catalog): void
 check($argc <= 2, 'Usage: php tests/d4-release-candidate.php [published-zip-directory]');
 $mirror = $argc === 2 ? realpath($argv[1]) : null;
 check($mirror !== false && ($mirror === null || is_dir($mirror)), 'Expected the released D3 base and template ZIP directory');
+$releaseZip = getenv('STARTER_TEST_D4_ZIP');
+$releaseZip = $releaseZip === false || $releaseZip === '' ? null : realpath($releaseZip);
+check($releaseZip !== false && ($releaseZip === null || is_file($releaseZip)), 'STARTER_TEST_D4_ZIP must point to a readable release ZIP');
 $fixture = new Fixtures();
 $fresh = new Fixtures();
 try {
-    $catalog = d4Catalog($fixture, $mirror);
+    $catalog = d4Catalog($fixture, $mirror, $releaseZip);
     d4CandidateUpgrade($fixture, $catalog);
     $fresh->startServices();
     $database = $fresh->database('qa_candidatefresh');

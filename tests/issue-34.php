@@ -61,6 +61,9 @@ function csvAcceptance(SmsLoginFixture $qa, PDO $db, int $port): void
     d3Request($port, 'GET', $members, access: $owner, status: 403, code: 'subscription_inactive');
     d3Request($port, 'GET', $audit, access: $owner, status: 403, code: 'subscription_inactive');
     $qa->clock(SMS_TIME + 10);
+    d3Request($port, 'PATCH', '/platform' . $org . '/name', ['name' => 'qa-new-org-private-text'], $platform);
+    $db->prepare('INSERT INTO starter_audit_logs (organization_id, action, metadata, created_at) VALUES (?, ?, ?, ?)')
+        ->execute([$id, 'organization_renamed', '{"old_name":"qa-legacy-org-private-old","new_name":"qa-legacy-org-private-new"}', gmdate('Y-m-d H:i:s', SMS_TIME)]);
     $invite = d3Request($port, 'POST', $org . '/invitations', ['phone' => '13900139123'], $owner, 201);
     $member = d3Join($port, $qa, $invite['link'], '13900139123', $id, 'member');
     d3Request($port, 'GET', $members, access: $member, status: 403, code: 'forbidden');
@@ -98,6 +101,13 @@ function csvAcceptance(SmsLoginFixture $qa, PDO $db, int $port): void
         && !in_array('organization_audit_exported', array_column($rows, 4), true)
         && !str_contains($body, '+8613900139121') && !str_contains($body, 'owner@example.test'),
         'Audit download omits credentials, foreign and current export audit records');
+    $renames = array_values(array_filter($rows, static fn (array $row): bool => $row[4] === 'organization_renamed'));
+    check(count($renames) === 2 && !str_contains($body, 'qa-new-org-private-text') && !str_contains($body, 'qa-legacy-org-private-'),
+        'Audit CSV contains both rename events without their raw names');
+    foreach ($renames as $row) {
+        check(json_decode($row[7], true, flags: JSON_THROW_ON_ERROR) === ['old_name' => '[redacted]', 'new_name' => '[redacted]'],
+            'Audit CSV applies the same redaction to new and historical names');
+    }
     $download = d3Request($port, 'GET', $org . '/audit-logs?action=organization_audit_exported', access: $owner)['items'];
     check(count($download) === 1 && $download[0]['actor_account_id'] === $users['owner']['account_id']
         && $download[0]['metadata'] === ['kind' => 'organization_audit', 'row_count' => count($rows)], 'Audit download records its actual data row count');

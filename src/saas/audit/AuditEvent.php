@@ -22,6 +22,10 @@ final class AuditEvent
         'verification_code_invalid' => 'invalid', 'verification_attempts_exceeded' => 'attempts_exceeded',
     ];
 
+    private const ORGANIZATION_NAMES = ['name', 'old_name', 'new_name'];
+    private const REDACTED_NAME = '[redacted]';
+    private const SMS_SUBMISSION_RESULTS = ['submitted', 'submission_failed', 'submission_timeout'];
+
     private const FIELDS = [
         'organization_created' => ['name', 'phase', 'package_id', 'seat_limit', 'starts_at', 'expires_at'],
         'organization_renamed' => ['old_name', 'new_name'],
@@ -75,10 +79,23 @@ final class AuditEvent
         ];
     }
 
+    public static function redactOrganizationNames(array $metadata): array
+    {
+        // A free-text name can contain a credential in any format.
+        foreach (self::ORGANIZATION_NAMES as $field) {
+            if (is_string($metadata[$field] ?? null)) {
+                $metadata[$field] = self::REDACTED_NAME;
+            }
+        }
+
+        return $metadata;
+    }
+
     public static function project(object $row): array
     {
         $action = $row->action;
-        $entry = json_decode($row->metadata, true, flags: JSON_THROW_ON_ERROR);
+        $decoded = json_decode($row->metadata, true, flags: JSON_THROW_ON_ERROR);
+        $entry = is_array($decoded) ? self::redactOrganizationNames($decoded) : [];
         $fields = match (true) {
             in_array($action, self::INVITATION_ACTIONS, true), $action === 'invitation_accepted' =>
                 ['invitation_id', 'previous_invitation_id', 'phone_masked', 'role', 'source'],
@@ -93,6 +110,8 @@ final class AuditEvent
             }
         }
         $result = match ($action) {
+            'sms_challenge_reissued' => in_array($entry['result'] ?? null, self::SMS_SUBMISSION_RESULTS, true)
+                ? $entry['result'] : 'reissued',
             'ownership_transfer_started' => 'started',
             'ownership_transfer_revoked' => 'revoked',
             'ownership_transfer_completed' => 'completed',
@@ -132,8 +151,7 @@ final class AuditEvent
         }
 
         return match ($field) {
-            'name', 'old_name', 'new_name' => is_string($value) && strlen($value) <= 240
-                && preg_match('/[@\x00-\x1f]|(?:[0-9][ .()-]*){11}|(?:https?|bearer)\s*[: ]/iu', $value) === 0,
+            'name', 'old_name', 'new_name' => $value === self::REDACTED_NAME,
             'phase' => in_array($value, ['active', 'pending'], true),
             'source' => in_array($value, ['api', 'cli', 'platform'], true),
             'role', 'previous_role', 'new_role' => in_array($value, ['owner', 'admin', 'member'], true),

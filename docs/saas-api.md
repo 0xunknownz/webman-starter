@@ -79,6 +79,8 @@ JSON 响应含 `code`、`message`、`data`、`trace_id`，验证失败可含字�
 
 查询参数为 `page`（正整数，默认 1）、`per_page`（1–100，默认 20）、`action`（可选，最长 64 字节的小写 snake_case 事件名）。返回 `data.items` 和 `data.pagination`，按 UTC 时间和 ID 倒序。系统事件的账号可为空。查询不写审计。缺少可靠组织归属的历史记录不进入组织侧。缺少平台来源标记的历史普通邀请撤销只在组织侧展示。
 
+审计中的组织创建及改名事件使用固定的 `[redacted]` 标记替代名称。新记录写入时即脱敏，历史记录在查询及导出时应用同一规则。通过组织 ID 关联相关资源。短信验证码重发沿用已记录的 `submitted`、`submission_failed` 或 `submission_timeout`，未记录供应商提交结果的事件显示 `reissued`。
+
 下载以 UTF-8 CSV 返回，带 `Content-Type: text/csv; charset=utf-8`、附件下载头、`Cache-Control: private, no-store` 和 `X-Trace-Id`。可能被表格程序解释成公式的文本格加一个前导单引号，含加号的 E.164 号码也作为文本导入。导出成功后记种类、操作者、组织、时间、结果和数据行数。行数不含表头或本次导出审计。生成失败但审计可用时记 `failed` 和 0 行。审计写入失败时返回 503 JSON，下载以审计提交为前提。
 
 平台用途会话和普通成员均无成员联系方式下载权限。平台审计提供 JSON 查询。业务项目实现其自身数据导出，使用 `BusinessQuery`、`BusinessExport`、`BusinessWrite` 或相应安全操作分类，按租户归属和声明的业务权限校验。

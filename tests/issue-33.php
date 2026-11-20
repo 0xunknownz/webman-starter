@@ -17,7 +17,7 @@ function auditQueryAcceptance(SmsLoginFixture $qa, PDO $db, int $port): void
     $memberPhone = '13900139112';
     $otherPhone = '13900139113';
     $expiresAt = SMS_TIME + 180;
-    $alpha = d3Open($port, $admin, $package, '甲组织', $ownerPhone, SMS_TIME + 10, $expiresAt);
+    $alpha = d3Open($port, $admin, $package, 'qa-original-private-text', $ownerPhone, SMS_TIME + 10, $expiresAt);
     $beta = d3Open($port, $admin, $package, '乙组织', $otherPhone);
     $pending = d3Open($port, $admin, $package, '待开通', '13900139114');
     $id = $alpha['organization_id'];
@@ -28,7 +28,8 @@ function auditQueryAcceptance(SmsLoginFixture $qa, PDO $db, int $port): void
     $other = d3Join($port, $qa, $beta['link'], $otherPhone, $beta['organization_id'], 'owner');
     d3Request($port, 'GET', $orgAudit, access: $owner, status: 403, code: 'subscription_inactive');
     $qa->clock(SMS_TIME + 10);
-    d3Request($port, 'PATCH', $ops . '/name', ['name' => '甲组织改名'], $admin);
+    $renamed = d3Request($port, 'PATCH', $ops . '/name', ['name' => 'qa-renamed-private-text'], $admin);
+    check($renamed['name'] === 'qa-renamed-private-text', 'The organization resource retains its display name');
     $invite = d3Request($port, 'POST', $org . '/invitations', ['phone' => $memberPhone], $owner, 201);
     d3Request($port, 'GET', $org . '/invitations/' . $invite['invitation_id'] . '/link', access: $owner);
     $invite = d3Request($port, 'POST', $org . '/invitations/' . $invite['invitation_id'] . '/reissue', access: $owner, status: 201);
@@ -55,7 +56,14 @@ function auditQueryAcceptance(SmsLoginFixture $qa, PDO $db, int $port): void
 
     $name = d3Request($port, 'GET', $orgAudit . '?action=organization_renamed', access: $owner)['items'][0];
     check($name['organization_id'] === $id && $name['actor_account_id'] !== $ownerId && $name['result'] === 'success'
-        && $name['metadata'] === ['old_name' => '甲组织', 'new_name' => '甲组织改名'], 'The recorded rename contains its original actor, organization and values');
+        && $name['metadata'] === ['old_name' => '[redacted]', 'new_name' => '[redacted]'], 'The recorded rename retains its actor and organization and redacts both names');
+    $stored = $db->prepare("SELECT action, metadata FROM starter_audit_logs WHERE organization_id = ? AND action IN ('organization_created', 'organization_renamed')");
+    $stored->execute([$id]);
+    $nameEvents = array_column($stored->fetchAll(PDO::FETCH_ASSOC), 'metadata', 'action');
+    check(json_decode($nameEvents['organization_created'], true, flags: JSON_THROW_ON_ERROR)['name'] === '[redacted]'
+        && json_decode($nameEvents['organization_renamed'], true, flags: JSON_THROW_ON_ERROR)['old_name'] === '[redacted]'
+        && json_decode($nameEvents['organization_renamed'], true, flags: JSON_THROW_ON_ERROR)['new_name'] === '[redacted]',
+        'New creation and rename records redact before persistence');
     $removed = d3Request($port, 'GET', $orgAudit . '?action=ownership_transfer_revoked', access: $owner)['items'][0];
     check($removed['actor_account_id'] === $ownerId && $removed['target_account_id'] === $memberId, 'Ownership revocation identifies the actor and target');
     $expired = d3Request($port, 'GET', $orgAudit . '?action=ownership_transfer_expired', access: $owner)['items'][0];
@@ -77,13 +85,24 @@ function auditQueryAcceptance(SmsLoginFixture $qa, PDO $db, int $port): void
         'phone' => '+8613900139111', 'verification_code' => '123456', 'token' => 'private-token-value',
     ], JSON_THROW_ON_ERROR), gmdate('Y-m-d H:i:s', SMS_TIME + 10)]);
     $insert->execute([null, $ownerId, null, 'organization_renamed', '{"old_name":"unscoped record"}', gmdate('Y-m-d H:i:s', SMS_TIME + 10)]);
+    $insert->execute([$id, $ownerId, null, 'organization_renamed', '{"old_name":"qa-legacy-private-old","new_name":"qa-legacy-private-new"}', gmdate('Y-m-d H:i:s', SMS_TIME)]);
+    foreach ([[$orgAudit, $owner], [$platform, $admin]] as [$path, $token]) {
+        $renames = d3Request($port, 'GET', $path . '?action=organization_renamed', access: $token)['items'];
+        check(count($renames) === 2 && array_column($renames, 'metadata') === array_fill(0, 2, ['old_name' => '[redacted]', 'new_name' => '[redacted]']),
+            'Platform and organization queries redact new and historical names the same way');
+    }
+    foreach (['{"purpose":"login"}', '{"purpose":"login","result":"private-text"}'] as $metadata) {
+        $insert->execute([null, null, $ownerId, 'sms_challenge_reissued', $metadata, gmdate('Y-m-d H:i:s', SMS_TIME + 10)]);
+    }
+    $resends = d3Request($port, 'GET', $platform . '?action=sms_challenge_reissued', access: $admin)['items'];
+    check(array_column($resends, 'result') === ['reissued', 'reissued'], 'Missing or unknown submission results fall back to the resend outcome');
     $recovery = d3Request($port, 'GET', $platform . '?action=phone_changed', access: $admin)['items'][0];
     check($recovery['metadata'] === [
         'method' => 'manual_recovery', 'old_phone_masked' => '**********9111', 'new_phone_masked' => '**********9119',
         'evidence_channel' => 'registered_contact', 'evidence_ref' => 'case-12345',
     ], 'Platform projection exposes masked numbers and the controlled evidence reference only');
     check(d3Request($port, 'GET', $orgAudit . '?action=phone_changed', access: $owner)['items'] === [], 'Organization audit excludes global identity activity even for its own owner');
-    check(count(d3Request($port, 'GET', $orgAudit . '?action=organization_renamed', access: $owner)['items']) === 1,
+    check(count(d3Request($port, 'GET', $orgAudit . '?action=organization_renamed', access: $owner)['items']) === 2,
         'Organization audit excludes legacy records whose organization cannot be verified');
 
     $count = (int) $db->query('SELECT COUNT(*) FROM starter_audit_logs')->fetchColumn();

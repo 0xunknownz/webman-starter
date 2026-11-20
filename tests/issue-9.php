@@ -187,6 +187,7 @@ function testPhoneRebind(Fixtures $fixtures, SmsLoginFixture $qa): void
         ksort($audit);
         check($audit === ['method' => 'normal', 'new_phone_masked' => '**********9001', 'old_phone_masked' => '**********8000',
             'result' => 'success'], 'Rebind audit did not contain exactly the redacted change result');
+        assertPhoneChangeAuditQuery($port, $newAccess, $db, $account, $account, $audit);
     });
     echo "PASS authenticated phone change, quota order, OTP binding, atomic invitation cleanup and audit rollback\n";
 
@@ -202,7 +203,8 @@ function testRebindResendAudit(Fixtures $fixtures, SmsLoginFixture $qa): void
 {
     $db = $fixtures->database('qa_rebindaudit');
     migrate($fixtures);
-    $account = rebindAccount($db, PHONE);
+    cliResult(init($fixtures, PHONE)->result(), true, 'platform_admin_initialized');
+    $account = (int) $db->query('SELECT id FROM starter_accounts')->fetchColumn();
     $qa->clock(SMS_TIME);
     $qa->withHost('rebind-resend-audit', static function (int $port) use ($qa, $db, $account): void {
         $access = smsToken(smsLogin($port, $qa->issue($port), purpose: 'organization'));
@@ -252,9 +254,42 @@ function testRebindResendAudit(Fixtures $fixtures, SmsLoginFixture $qa): void
                 && $metadata === ['phone_masked' => $masked, 'purpose' => 'rebind', 'result' => $result],
                 'Resend audit must identify the correct step and record the redacted submission result');
         }
+        $qa->clock(SMS_TIME + 600);
+        $platform = smsToken(smsLogin($port, $qa->issue($port)));
+        $items = platformAuditItems($port, $platform, 'sms_challenge_reissued');
+        check(count($items) === count($expected), 'All persisted rebind resends appear in the platform audit query');
+        foreach (array_reverse($expected) as $index => [$offset, $masked, $result]) {
+            $item = $items[$index];
+            check($item['actor_account_id'] === $account && $item['target_account_id'] === $account
+                && $item['created_at'] === gmdate(DATE_ATOM, SMS_TIME + $offset) && $item['result'] === $result
+                && $item['metadata'] === ['purpose' => 'rebind', 'phone_masked' => $masked],
+                'Audit query preserves real resend submission outcomes and redaction');
+        }
     });
     echo "PASS per-flow, per-step resend audit remains redacted after expiry or consumption
 ";
+}
+
+function platformAuditItems(int $port, string $access, string $action): array
+{
+    return smsExpect(smsRequest($port, 'GET', '/saas/platform/audit-logs?action=' . rawurlencode($action),
+        headers: sessionBearer($access)), 200, 'success', 'Platform audit query')['data']['items'];
+}
+
+/** @param array<string, string> $metadata Expected redacted storage metadata, including result. */
+function assertPhoneChangeAuditQuery(int $port, string $access, PDO $db, ?int $actor, int $target, array $metadata): void
+{
+    $items = platformAuditItems($port, $access, 'phone_changed');
+    check(count($items) === 1, 'Expected one phone change from the real flow in the platform query');
+    $item = $items[0];
+    $timestamp = $db->query("SELECT created_at FROM starter_audit_logs WHERE action = 'phone_changed'")->fetchColumn();
+    $result = $metadata['result'];
+    unset($metadata['result']);
+    check($item['action'] === 'phone_changed' && $item['organization_id'] === null
+        && $item['actor_account_id'] === $actor && $item['target_account_id'] === $target
+        && $item['created_at'] === str_replace(' ', 'T', $timestamp) . '+00:00'
+        && $item['result'] === $result && $item['metadata'] == $metadata,
+        'Platform query must retain the recovery audit identity, time, outcome and redacted fields');
 }
 
 function testRebindDeadlines(Fixtures $fixtures, SmsLoginFixture $qa): void
