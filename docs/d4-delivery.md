@@ -41,6 +41,12 @@ done
 
 ## 本次验证记录
 
-D1 QA-01、D2 组织与邀请、D3 生命周期和 D4 审计与导出专项均在 PHP 8.1.34、Composer 2.5.1、Webman 2.2.5、MySQL 8.0.46、Redis 8.6.2 下通过。D4 查询与导出专项也已在 Webman 2.1.0 下通过。D4 候选 ZIP 使用已发布的 D2 模板与 D3 基座 2.0.0 验证全新安装及升级。升级后原组织记录、审计与现有会话仍可使用。D2 模板候选包验收和已发布的 D2 到 D3 升级回归也已通过。两项升级验收均使用校验和匹配的 GitHub Release 下载文件。当前 D4 制品为本地候选包。PHP 语法检查和 `git diff --check` 通过。
+D4 的 2.1.0 基座包和模板包已正式发布，来源为 `92090f3`。基座 [Release v2.1.0](https://github.com/0xunknownz/webman-starter/releases/tag/v2.1.0)：[ZIP](https://github.com/0xunknownz/webman-starter/releases/download/v2.1.0/webman-starter-2.1.0.zip) · [SHA-256](https://github.com/0xunknownz/webman-starter/releases/download/v2.1.0/webman-starter-2.1.0.zip.sha256)。模板 [Release template-v2.1.0](https://github.com/0xunknownz/webman-starter/releases/tag/template-v2.1.0)：[ZIP](https://github.com/0xunknownz/webman-starter/releases/download/template-v2.1.0/webman-starter-template-2.1.0.zip) · [SHA-256](https://github.com/0xunknownz/webman-starter/releases/download/template-v2.1.0/webman-starter-template-2.1.0.zip.sha256)。
+
+使用从 `92090f3` 构建并发布的同一份 ZIP，在 PHP 8.1.34、Composer 2.5.1、Webman 2.2.5、MySQL 8.0.46、Redis 8.6.2 下，验证了 Composer 全新建项、D3 基座到 D4 升级、显式及重复迁移、首次初始化、历史业务数据、审计脱敏及会话保留。另以公共索引从全新 Composer 缓存创建模板项目，安装了基座 2.1.0 并通过 `composer check-platform-reqs`。D1 QA-01、D2 组织与邀请、D3 生命周期以及 D4 查询和导出专项均通过；D4 专项亦在 Webman 2.1.0 下通过。已从公开 Release 重新下载 ZIP 和 SHA-256 文件，确认与验收制品逐字节一致。
+
+Composer 索引已将两个 2.1.0 版本加入 `composer` 分支并保留既有条目：[索引提交 4840508](https://github.com/0xunknownz/webman-starter/commit/4840508e7c474194dbbc7daf0a2b8ecc531191ae) · [公开 packages.json](https://raw.githubusercontent.com/0xunknownz/webman-starter/composer/packages.json)。
+
+PHP 语法检查及 `git diff --check` 通过。真实 SMTP 与短信供应商的提交及实际送达联调仍待完成；本次验收使用隔离环境中的受控发送器。
 
 受控短信与邮件发送器验证无需发送、提交接受、拒绝、超时、计数及受限审计。真实 SMTP 和短信供应商联调未验证，当前验收使用隔离环境测试发送器。真实提交和实际送达由部署侧使用其供应商配置和指定测试接收目标单独验证。
