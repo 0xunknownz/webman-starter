@@ -360,12 +360,12 @@ function assertOperatorRecoveryAudit(PDO $db, int $account, int|string $actor, s
         check((int) $rows[0]['actor_account_id'] === $actor, 'Manual recovery audit has the wrong platform operator');
     }
     check($audit == $expected, 'Expected only approved reason, opaque evidence reference and redacted audit metadata');
-
-    return $expected;
     check($db->query("SELECT phone FROM starter_accounts WHERE id = $account")->fetchColumn() === '+86' . OPERATOR_NEW_PHONE,
         'Recovery did not preserve the original account ID');
     check((int) $db->query("SELECT COUNT(*) FROM starter_invitations WHERE phone = '+86$oldPhone' AND status = 'pending'")->fetchColumn() === 0,
         'Recovery did not revoke old-phone invitations');
     check($db->query("SELECT role FROM starter_memberships WHERE account_id = $account")->fetchColumn() === 'owner',
         'Recovery changed the existing membership');
+
+    return $expected;
 }
