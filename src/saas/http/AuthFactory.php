@@ -10,6 +10,9 @@ use InvalidArgumentException;
 use Redis;
 use support\Db;
 use support\Redis as WebmanRedis;
+use Z0x\WebmanStarter\saas\audit\AuditLogController;
+use Z0x\WebmanStarter\saas\audit\AuditLogService;
+use Z0x\WebmanStarter\saas\audit\IlluminateAuditLogRepository;
 use Z0x\WebmanStarter\saas\contract\SmsSenderInterface;
 use Z0x\WebmanStarter\saas\email\EmailController;
 use Z0x\WebmanStarter\saas\email\EmailSenderInterface;
@@ -20,6 +23,9 @@ use Z0x\WebmanStarter\saas\email\RedisPasswordLoginLimiter;
 use Z0x\WebmanStarter\saas\emailchange\EmailChangeController;
 use Z0x\WebmanStarter\saas\emailchange\EmailChangeService;
 use Z0x\WebmanStarter\saas\emailchange\IlluminateEmailChangeRepository;
+use Z0x\WebmanStarter\saas\export\CsvEncoder;
+use Z0x\WebmanStarter\saas\export\ExportOrganizationCsvController;
+use Z0x\WebmanStarter\saas\export\ExportOrganizationCsvService;
 use Z0x\WebmanStarter\saas\infrastructure\IlluminateOrganizationAudit;
 use Z0x\WebmanStarter\saas\infrastructure\IlluminatePlatformAdminRepository;
 use Z0x\WebmanStarter\saas\infrastructure\IlluminateSmsLoginRepository;
@@ -99,6 +105,33 @@ final class AuthFactory
         if (preg_match('/\A[A-Za-z0-9._-]+:[A-Za-z0-9._-]+:?\z/', $prefix) !== 1 || strlen($secret) < 32) {
             throw new InvalidArgumentException('Authentication requires a product:environment Redis prefix and a secret of at least 32 bytes.');
         }
+    }
+
+    public function auditLogController(): AuditLogController
+    {
+        $connection = Db::connection($this->databaseConnection);
+
+        return new AuditLogController(new AuditLogService(
+            new IlluminateAuditLogRepository($connection),
+            new OrganizationAccessService($this->organizationRepository($connection), new IlluminateOrganizationMembershipRepository($connection)),
+            $this->sessions($connection, $this->redisClient()),
+            $this->clock,
+        ));
+    }
+
+    public function exportOrganizationCsvController(): ExportOrganizationCsvController
+    {
+        $connection = Db::connection($this->databaseConnection);
+
+        return new ExportOrganizationCsvController(new ExportOrganizationCsvService(
+            new OrganizationAccessService($this->organizationRepository($connection), new IlluminateOrganizationMembershipRepository($connection)),
+            $this->sessions($connection, $this->redisClient()),
+            new IlluminateMembershipRepository($connection),
+            new IlluminateAuditLogRepository($connection),
+            new IlluminateOrganizationAudit($connection),
+            new CsvEncoder(),
+            $this->clock,
+        ));
     }
 
     public function membershipController(): MembershipController

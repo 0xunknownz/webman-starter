@@ -40,6 +40,12 @@ final class Routes
                 $organization = new SessionMiddleware($auth, SessionService::PURPOSE_ORGANIZATION);
                 InvitationRoutes::register($auth->invitationController(...), $organization);
                 PlatformOrganizationRoutes::registerOwnerArchive($auth->platformOrganizationController(...), $organization);
+                Route::get('/organizations/{organizationId:[1-9][0-9]*}/audit-logs', static fn (Request $request, string $organizationId): Response =>
+                    $auth->auditLogController()->organization($request, $organizationId))->middleware($organization);
+                Route::get('/organizations/{organizationId:[1-9][0-9]*}/members/export', static fn (Request $request, string $organizationId): Response =>
+                    $auth->exportOrganizationCsvController()->members($request, $organizationId))->middleware($organization);
+                Route::get('/organizations/{organizationId:[1-9][0-9]*}/audit-logs/export', static fn (Request $request, string $organizationId): Response =>
+                    $auth->exportOrganizationCsvController()->audit($request, $organizationId))->middleware($organization);
                 Route::post('/auth/sms/send', static fn (Request $request): Response => $auth->controller()->sendSms($request));
                 Route::post('/auth/sms/login', static fn (Request $request): Response => $auth->controller()->loginSms($request));
                 Route::post('/auth/refresh', static fn (Request $request): Response => $auth->controller()->refresh($request));
@@ -71,6 +77,8 @@ final class Routes
                 $platform = new SessionMiddleware($auth, SessionService::PURPOSE_PLATFORM);
                 PlatformOrganizationRoutes::register($auth->platformOrganizationController(...), $platform);
                 PackageRoutes::register($auth->packageController(...), $platform);
+                Route::get('/platform/audit-logs', static fn (Request $request): Response =>
+                    $auth->auditLogController()->platform($request))->middleware($platform);
                 SubscriptionRoutes::register($auth->subscriptionController(...), $platform);
                 Route::get('/platform/me', static fn (Request $request): Response => AuthController::platformMe($request, $request->starterIdentity))
                     ->middleware($platform);

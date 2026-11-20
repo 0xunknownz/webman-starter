@@ -182,7 +182,7 @@ final class ManagePlatformOrganizationsService
             if ($invitation->role !== OrganizationRole::Member) {
                 throw BusinessException::notFound();
             }
-            $this->lifecycle->revoke($invitation, $actor->accountId, $this->sessions->liveTime($actor, $this->clock));
+            $this->lifecycle->revoke($invitation, $actor->accountId, $this->sessions->liveTime($actor, $this->clock), platformOperation: true);
         });
     }
 

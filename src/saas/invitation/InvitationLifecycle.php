@@ -67,10 +67,10 @@ final class InvitationLifecycle
         return $invitation;
     }
 
-    public function revoke(Invitation $invitation, int $actorId, int $now): void
+    public function revoke(Invitation $invitation, int $actorId, int $now, bool $platformOperation = false): void
     {
         $this->invitations->revoke($invitation);
-        $this->audit('invitation_revoked', $invitation, $actorId, $now);
+        $this->audit('invitation_revoked', $invitation, $actorId, $now, $platformOperation ? ['source' => 'platform'] : []);
     }
 
     public function replace(Organization $organization, Invitation $old, MainlandMobileNumber $phone, int $actorId, int $now): Invitation
