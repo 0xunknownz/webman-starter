@@ -127,6 +127,7 @@ function testEmailRecovery(Fixtures $fixtures, SmsLoginFixture $auth): void
         check((int) $audit['actor_account_id'] === $account && (int) $audit['target_account_id'] === $account
             && $metadata === ['method' => 'email_recovery', 'new_phone_masked' => '**********9001',
                 'old_phone_masked' => '**********8000', 'result' => 'success'], 'Recovery success audit must identify actor and target and redact all credentials');
+        assertPhoneChangeAuditQuery($port, $newAccess, $db, $account, $account, $metadata);
     }, ['STARTER_EMAIL_TTL' => '300']);
     echo "PASS email recovery without password or old SMS, scoped proof, conflict and audit rollback, cleanup and sessions\n";
 

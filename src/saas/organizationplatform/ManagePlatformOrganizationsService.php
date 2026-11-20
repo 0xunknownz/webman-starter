@@ -7,6 +7,7 @@ namespace Z0x\WebmanStarter\saas\organizationplatform;
 use Closure;
 use LogicException;
 use SensitiveParameter;
+use Z0x\WebmanStarter\saas\audit\AuditEvent;
 use Z0x\WebmanStarter\saas\contract\OrganizationAuditInterface;
 use Z0x\WebmanStarter\saas\domain\MainlandMobileNumber;
 use Z0x\WebmanStarter\saas\invitation\Invitation;
@@ -182,7 +183,7 @@ final class ManagePlatformOrganizationsService
             if ($invitation->role !== OrganizationRole::Member) {
                 throw BusinessException::notFound();
             }
-            $this->lifecycle->revoke($invitation, $actor->accountId, $this->sessions->liveTime($actor, $this->clock));
+            $this->lifecycle->revoke($invitation, $actor->accountId, $this->sessions->liveTime($actor, $this->clock), platformOperation: true);
         });
     }
 
@@ -327,7 +328,14 @@ final class ManagePlatformOrganizationsService
     /** @param array<string, bool|int|string|null> $metadata */
     private function audit(Organization $organization, string $action, SessionIdentity $actor, int $now, array $metadata = []): void
     {
-        $this->audit->append($organization->id, $action, $actor->accountId, null, $metadata + ['result' => 'success'], $now);
+        $this->audit->append(
+            $organization->id,
+            $action,
+            $actor->accountId,
+            null,
+            AuditEvent::redactOrganizationNames($metadata) + ['result' => 'success'],
+            $now,
+        );
     }
 
     /** @return array{organization_id:int, name:string, phase:string, suspended:bool, archived:bool} */
