@@ -150,6 +150,56 @@
                     "url": "https://github.com/0xunknownz/webman-starter/releases/download/v2.0.0/webman-starter-2.0.0.zip",
                     "shasum": "49a3ad5113e7dd6faf3abf9eddd40e830c0503c5"
                 }
+            },
+            "2.1.0": {
+                "name": "z0x/webman-starter",
+                "description": "webman starter",
+                "type": "library",
+                "require": {
+                    "php": ">=8.1",
+                    "ext-pdo_mysql": "*",
+                    "ext-redis": "*",
+                    "workerman/webman-framework": "^2.1",
+                    "webman/database": "^2.1",
+                    "webman/redis": "^2.1",
+                    "giggsey/libphonenumber-for-php-lite": "^9.0",
+                    "tinywan/jwt": "^1.15",
+                    "tinywan/validate": "^1.0",
+                    "tinywan/storage": "^1.1",
+                    "aliyuncs/oss-sdk-php": "^2.7",
+                    "webman/captcha": "^1.0",
+                    "webman/event": "^1.0",
+                    "robmorgan/phinx": "^0.16.11",
+                    "hhink/webman-sms": "^1.0",
+                    "vlucas/phpdotenv": "^5.6",
+                    "webman/log": "^2.1",
+                    "ramsey/uuid": "^4.9",
+                    "symfony/mailer": "^6.4"
+                },
+                "require-dev": {
+                    "odan/phinx-migrations-generator": "^6.4"
+                },
+                "license": "MIT",
+                "bin": [
+                    "bin/webman-starter"
+                ],
+                "autoload": {
+                    "psr-4": {
+                        "Z0x\\WebmanStarter\\": "src/"
+                    }
+                },
+                "authors": [
+                    {
+                        "name": "z0x",
+                        "email": "mr_zong@qq.com"
+                    }
+                ],
+                "version": "2.1.0",
+                "dist": {
+                    "type": "zip",
+                    "url": "https://github.com/0xunknownz/webman-starter/releases/download/v2.1.0/webman-starter-2.1.0.zip",
+                    "shasum": "4dcbe505029c51cf6be8443beab9f2152baad28c"
+                }
             }
         },
         "z0x/webman-starter-template": {
@@ -263,6 +313,62 @@
                     "type": "zip",
                     "url": "https://github.com/0xunknownz/webman-starter/releases/download/template-v2.0.0/webman-starter-template-2.0.0.zip",
                     "shasum": "fbd2383e7d87558761f8736ca112c6f42893b44f"
+                }
+            },
+            "2.1.0": {
+                "name": "z0x/webman-starter-template",
+                "type": "project",
+                "keywords": [
+                    "high performance",
+                    "http service"
+                ],
+                "homepage": "https://github.com/0xunknownz/webman-starter",
+                "license": "MIT",
+                "description": "Webman project template for Webman Starter.",
+                "authors": [
+                    {
+                        "name": "walkor",
+                        "email": "walkor@workerman.net",
+                        "homepage": "https://www.workerman.net",
+                        "role": "Developer"
+                    }
+                ],
+                "support": {
+                    "issues": "https://github.com/0xunknownz/webman-starter/issues"
+                },
+                "require": {
+                    "php": ">=8.1",
+                    "workerman/webman-framework": "^2.1",
+                    "monolog/monolog": "^2.0",
+                    "z0x/webman-starter": "^2.1.0",
+                    "webman/database": "^2.1",
+                    "webman/redis": "^2.1"
+                },
+                "suggest": {
+                    "ext-event": "For better performance. "
+                },
+                "autoload": {
+                    "psr-4": {
+                        "": "./",
+                        "app\\": "./app",
+                        "App\\": "./app",
+                        "app\\View\\Components\\": "./app/view/components"
+                    }
+                },
+                "prefer-stable": true,
+                "extra": {
+                    "upstream-skeleton": {
+                        "package": "workerman/webman",
+                        "url": "https://github.com/walkor/webman",
+                        "tag": "v2.2.3",
+                        "commit": "394e611efc496eab992fc6447d2c7ef2438b6902"
+                    }
+                },
+                "version": "2.1.0",
+                "dist": {
+                    "type": "zip",
+                    "url": "https://github.com/0xunknownz/webman-starter/releases/download/template-v2.1.0/webman-starter-template-2.1.0.zip",
+                    "shasum": "d9987017279997ecd8d4e75afc665c7bb380f04d"
                 }
             }
         }
